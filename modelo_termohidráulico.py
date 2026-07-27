@@ -139,7 +139,7 @@ for numero_iteracion, i in enumerate([PPHE1, PPHE2, PPHE3], start=1):
     Re = reynolds(rho=rho, u=u_m, dh=d_h, mu=mu)  # Cálculo del número de Reynolds
     Pr = prandtl(cp=cp, mu=mu, k=k)  # Cálculo del número de Prandtl
     Nu = nusselt(n3=constantes_n[2], n4=constantes_n[3], n5=constantes_n[4], Re=Re, Pr=Pr)  # Cálculo del número de Nusselt
-    f = factor_de_fricción(n1=constantes_n[3], Re=Re, n2=constantes_n[4])  # Cálculo del factor de fricción
+    f = factor_de_fricción(n1=constantes_n[0], Re=Re, n2=constantes_n[1])  # Cálculo del factor de fricción
     h = Nu * k / d_h  # Cálculo del coeficiente de transferencia de calor
     resultados.append(
         PPHEResult(
