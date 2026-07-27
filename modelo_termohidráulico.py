@@ -43,7 +43,7 @@ def asignacion_de_constantes(sT,s2L,dsp,h):
     elif 0.99 <= a <= 1.01 and 0.17 <= b <= 0.24 and 0.071 <= c <= 0.143:
         n1 = -15.3*b + (1.4*c + 5.4)
         n2 = 1.725*b + (1.11*c - 0.66)
-        n3 = 0.03*b + (0.76*c + 0.032)
+        n3 = 0.03*b + (0.76*c - 0.032)
         n4 = -1.12*c + 0.905
         n5 = 0.4
     elif 1.7 <= a <= 1.72 and 0.17 <= b <= 0.24 and 0.071 <= c <= 0.17:
@@ -85,6 +85,7 @@ class PPHEResult:
 
 
 def imprimir_resultados(resultados):
+    """Esta función sirve para dar formato a la impresión por consola de los resultados"""
     encabezado = (
         f"{'Caso':<8}{'Dh [m]':>12}{'u [m/s]':>12}{'Pr':>10}{'Re':>15}{'Nu':>12}{'f':>12}{'h [W/m2K]':>16}"
     )
@@ -124,7 +125,7 @@ PPHE3 = PPHEGeometry(
     w_e=15e-3)
 
 ### CÁLCULOS NUMÉRICOS
-G = 30 #kg/s
+G = 30/33 #kg/s se divide entre 33 para tener en cuenta que el flujo se reparte entre varios canales
 rho = 980 #kg/m3
 mu = 0.0008 #Pa*s
 k = 0.618 #W/(m*K)
