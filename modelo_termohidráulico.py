@@ -30,7 +30,7 @@ def diametro_hidraulico_interno(b_i):
     return 1.06 * 2 * (b_i/sqrt(2)) # Se aplica un factor de corrección
 
 def asignacion_de_constantes(sT,s2L,dsp,h):
-    """Esta función se encarga de asginar valores a las constantes ni"""
+    """Esta función se encarga de asignar valores a las constantes ni"""
     a = s2L/sT
     b = dsp/sT
     c = h/sT
