@@ -16,15 +16,24 @@ from math import sqrt
 # Números adimensionales
 # =============================================================================
 
-def factor_de_fricción(n1, Re, n2):
-    """Factor de fricción (ley de potencia, aproximación empírica)."""
+def factor_de_friccion_int(n1, Re, n2):
+    """Factor de fricción para el CANAL INTERNO (ley de potencia)."""
     return n1 * Re ** n2
 
+def factor_de_friccion_ext(Re):
+    """Factor de fricción para el CANAL EXTERNO (ley de potencia, se puede asumir cierta independientemente de la geometría con las constantes dadas)"""
+    A = 2.187
+    n = 0.356
+    return A*Re**(-n)
 
-def nusselt(n3, n4, n5, Re, Pr):
-    """Número de Nusselt (ley de potencia, aproximación empírica)."""
+def nusselt_int(n3, n4, n5, Re, Pr):
+    """Número de Nusselt para el CANAL INTERNO (ley de potencia)."""
     return n3 * Re ** n4 * Pr ** n5
 
+def nusselt_ext(Re, Pr, f):
+    """Número de Nusselt para el CANAL EXTERNO (correlación experimental, se puede asumir cierta independientemente de la geometría)"""
+    psi = 0.58
+    return (psi*f/8*Re*Pr)/(1.07+12.7*(psi*f/8)**(1/2)*(Pr**(2/3)-1))
 
 def reynolds(rho, u, dh, mu):
     """Número de Reynolds."""
@@ -40,15 +49,24 @@ def prandtl(cp, mu, k):
 # Parámetros geométricos derivados
 # =============================================================================
 
-def velocidad_media(G, rho, b_i, w_pp, w_e):
+def velocidad_media_int(G, rho, b_i, w_pp, w_e):
     """Velocidad media por el conducto interno."""
     area_flujo = b_i / sqrt(2) * (w_pp - 2 * w_e)
+    return 0.94 * (G / (rho * area_flujo))  # Se aplica un factor de corrección
+
+def velocidad_media_ext(G, rho, b_i, b, w_pp, w_e):
+    """Velocidad media por el conducto externo."""
+    area_flujo = (b_i + b - b_i / sqrt(2)) * (w_pp - 2 * w_e)
     return 0.94 * (G / (rho * area_flujo))  # Se aplica un factor de corrección
 
 
 def diametro_hidraulico_interno(b_i):
     """Diámetro hidráulico interno."""
     return 1.06 * 2 * (b_i / sqrt(2))  # Se aplica un factor de corrección
+
+def diametro_hidraulico_externo(b_i, b):
+    """Diámetro hidráulico externo."""
+    return 2 * ((b_i+b)-b_i/sqrt(2))
 
 
 # =============================================================================
@@ -108,11 +126,16 @@ class PPHEResult:
     nombre: str
     d_h: float
     u_m: float
-    Pr: float
-    Re: float
-    Nu: float
-    f: float
-    h: float
+    Pr_int: float
+    Re_int: float
+    Nu_int: float
+    f_int: float
+    h_int: float
+    Pr_ext: float
+    Re_ext: float
+    Nu_ext: float
+    f_ext: float
+    h_ext: float
 
 
 def imprimir_resultados(resultados):
@@ -167,11 +190,13 @@ PPHE3 = PPHEGeometry(
 # Cálculos numéricos
 # =============================================================================
 
-G = 30 / 33  # kg/s. Se divide entre 33 para tener en cuenta que el flujo se reparte entre varios canales
-rho = 980    # kg/m3
-mu = 0.0008  # Pa*s
-k = 0.618    # W/(m*K)
-cp = 4175    # J/(kg*K)
+#G = 30 / 33  # kg/s. Se divide entre 33 para tener en cuenta que el flujo se reparte entre varios canales
+#rho = 980    # kg/m3
+#mu = 0.0008  # Pa*s
+#k = 0.618    # W/(m*K)
+#cp = 4175    # J/(kg*K)
+props_fl_int = {G:30/33, rho:980, mu:0.0008, k:0.618, cp:4175} #Propiedades del fluido interno
+props_fl_ext = {G:30/32, rho:980, mu:0.0005, k:0.654, cp:4175} #Propiedades del fluido externo
 
 resultados = []
 
@@ -180,24 +205,37 @@ for numero_iteracion, i in enumerate([PPHE1, PPHE2, PPHE3], start=1):
 
     constantes_n = asignacion_de_constantes(sT=i.s_t, s2L=i.s_2l, dsp=i.d_sp, h=i.b_i)
 
-    d_h = diametro_hidraulico_interno(i.b_i)                                       # Diámetro hidráulico
-    u_m = velocidad_media(G=G, rho=rho, b_i=i.b_i, w_pp=i.w_pp, w_e=i.w_e)         # Velocidad media
-    Re = reynolds(rho=rho, u=u_m, dh=d_h, mu=mu)                                   # Número de Reynolds
-    Pr = prandtl(cp=cp, mu=mu, k=k)                                                # Número de Prandtl
-    Nu = nusselt(n3=constantes_n[2], n4=constantes_n[3], n5=constantes_n[4], Re=Re, Pr=Pr)  # Número de Nusselt
-    f = factor_de_fricción(n1=constantes_n[0], Re=Re, n2=constantes_n[1])          # Factor de fricción
-    h = Nu * k / d_h                                                               # Coef. de transferencia de calor
+    """CÁLCULO INTERNO"""
+
+    d_h_int = diametro_hidraulico_interno(i.b_i)                                                                                # Diámetro hidráulico
+    u_m_int = velocidad_media(G=props_fl_int.get(G), rho=props_fl_int.get(rho), b_i=i.b_i, w_pp=i.w_pp, w_e=i.w_e)              # Velocidad media
+    Re_int = reynolds(rho=props_fl_int.get(rho), u=u_m_int, dh=d_h_int, mu=props_fl_int.get(mu))                                # Número de Reynolds
+    Pr_int = prandtl(cp=props_fl_int.get(cp), mu=props_fl_int.get(mu), k=props_fl_int.get(k))                                   # Número de Prandtl
+    Nu_int = nusselt_int(n3=constantes_n[2], n4=constantes_n[3], n5=constantes_n[4], Re=Re_int, Pr=Pr_int)                      # Número de Nusselt
+    f_int = factor_de_friccion(n1=constantes_n[0], Re=Re_int, n2=constantes_n[1])                                               # Factor de fricción
+    h_int = Nu_int * props_fl_int.get(k) / d_h_int                                                                              # Coef. de transferencia de calor
+
+
+    """CÁLCULO INTERNO"""
+
+    d_h_int = diametro_hidraulico_interno(i.b_i)                                                                                # Diámetro hidráulico
+    u_m_int = velocidad_media(G=props_fl_int.get(G), rho=props_fl_int.get(rho), b_i=i.b_i, w_pp=i.w_pp, w_e=i.w_e)              # Velocidad media
+    Re_int = reynolds(rho=props_fl_int.get(rho), u=u_m_int, dh=d_h_int, mu=props_fl_int.get(mu))                                # Número de Reynolds
+    Pr_int = prandtl(cp=props_fl_int.get(cp), mu=props_fl_int.get(mu), k=props_fl_int.get(k))                                   # Número de Prandtl
+    Nu_int = nusselt_int(n3=constantes_n[2], n4=constantes_n[3], n5=constantes_n[4], Re=Re_int, Pr=Pr_int)                      # Número de Nusselt
+    f_int = factor_de_friccion(n1=constantes_n[0], Re=Re_int, n2=constantes_n[1])                                               # Factor de fricción
+    h_int = Nu_int * props_fl_int.get(k) / d_h_int                                                                              # Coef. de transferencia de calor
 
     resultados.append(
         PPHEResult(
             nombre=nombre,
             d_h=d_h,
             u_m=u_m,
-            Pr=Pr,
-            Re=Re,
-            Nu=Nu,
-            f=f,
-            h=h,
+            Pr_int=Pr_int,
+            Re_int=Re_int,
+            Nu_int=Nu_int,
+            f_int=f_int,
+            h_int=h_int,
         )
     )
 
