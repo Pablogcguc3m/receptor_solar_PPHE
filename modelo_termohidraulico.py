@@ -57,7 +57,7 @@ def velocidad_media_int(G, rho, b_i, w_pp, w_e):
 def velocidad_media_ext(G, rho, b_i, b, w_pp, w_e):
     """Velocidad media por el conducto externo."""
     area_flujo = (b_i + b - b_i / sqrt(2)) * (w_pp - 2 * w_e)
-    return 0.94 * (G / (rho * area_flujo))  # Se aplica un factor de corrección
+    return (G / (rho * area_flujo))  # Se aplica un factor de corrección
 
 
 def diametro_hidraulico_interno(b_i):
