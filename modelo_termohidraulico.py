@@ -11,6 +11,7 @@ Correlaciones tomadas de O. Arsenyeva et al.
 from dataclasses import dataclass
 from math import sqrt
 import formulas as form
+import asignacion as asig
 
 # =============================================================================
 # Estructuras de datos
