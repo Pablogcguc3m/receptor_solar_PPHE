@@ -1,3 +1,8 @@
+"""Este script recoge las geometrías de los PPHE a estudiar."""
+
+from dataclasses import dataclass
+
+
 @dataclass(frozen=True)
 class PPHEGeometry:
     delta_pp: float  # Espesor de placa [m]

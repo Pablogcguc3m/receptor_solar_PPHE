@@ -37,9 +37,17 @@ def Pr(cp, mu, k):
     return (cp * mu) / k
 
 def NTU(t1in,t1out,t2in,t2out):
-    """Número de unidades de transferencia MÍNIMO (23) O.Arsenyeva"""
-    LMTD = ((t1in-t2out)-(t1out-t2in))/log((t1in-t2out)/(t1out-t2in))
-    return (t1in-t1out)/LMTD
+    """Número de unidades de transferencia MÍNIMO (23) O.Arsenyeva.
+
+    Referido al fluido 1 y en contracorriente. Se usan valores absolutos para
+    que sea indiferente que el fluido 1 sea el caliente o el frío: los saltos
+    terminales son |t1in-t2out| (extremo por el que entra el fluido 1) y
+    |t1out-t2in| (extremo por el que sale).
+    """
+    dT_a = abs(t1in-t2out)
+    dT_b = abs(t1out-t2in)
+    LMTD = (dT_a-dT_b)/log(dT_a/dT_b)
+    return abs(t1in-t1out)/LMTD
 
 
 # =============================================================================
@@ -56,8 +64,15 @@ def deE(b_i, b):
     return 2 * ((b_i+b)-b_i/sqrt(2))
 
 def wI(del_P, rho, f, NTU, cp, w, U, Fx):
-    """Cálculo de la velocidad interna según la fórmula (28) del artículo de O.Arsenyeva."""
-    return sqrt(del_P/(rho)*1/(1.5+(f*NTU*cp*w*rho)/(8*sqrt(2)*U*Fx)))
+    """Cálculo de la velocidad interna según la fórmula (28) del artículo de O.Arsenyeva.
+
+    OJO: el artículo imprime 8*sqrt(2) en el denominador, pero esa constante es
+    incompatible con el resto de sus propias ecuaciones. Igualando las dos
+    expresiones de L_F (LF_ploss y LF_thermal) y sustituyendo de1 = 2*b_i/sqrt(2)
+    el b_i se cancela y el denominador queda 4*sqrt(2)*de1/b_i = 8. Con 8*sqrt(2)
+    las dos longitudes difieren siempre en un factor sqrt(2); con 8 coinciden.
+    """
+    return sqrt(del_P/(rho)*1/(1.5+(f*NTU*cp*w*rho)/(8*U*Fx)))
 
 def wE(wI, cp1, cp2, rho1, rho2, t1in, t1out, t2in, t2out, de1, de2, wpp, we):
     """Velocidad media por el conducto externo según la fórmula (30) de O. Arsenyeva."""
