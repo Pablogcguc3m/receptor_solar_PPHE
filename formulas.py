@@ -65,10 +65,18 @@ def wE(wI, cp1, cp2, rho1, rho2, t1in, t1out, t2in, t2out, de1, de2, wpp, we):
     fch2 = de2/2*(wpp-2*we)
     return wI*(cp1*rho1*(t1in-t1out)*fch1)/(cp2*rho2*(t2out-t2in)*fch2)
 
-def U(h1,k1,de1,Nu1,h2,k2,de2,Nu2,delta_w,lambda_w,Rf1,Rf2):
+def U(h1,k1,de1,Nu1,h2,k2,de2,Nu2,delta_w):
     """Coeficiente global de transmisión de calor (29) de O.Arsenyeva."""
     h1=Nu1*k1/de1
     h2=Nu2*k2/de2
-    inv_U = 1/h1 + 1/h2 + delta_w/lambda_w + Rf1 + Rf2
+    lambda_w=16  # W/(m*K)
+    inv_U = 1/h1 + 1/h2 + delta_w/lambda_w
     return 1/inv_U
 
+def LF_ploss(de1,f,del_P,rho,w):
+    """Longitud para desarrollar la pérdida de carga"""
+    return 2*de1/f*(del_P/(rho*w**2)-1.5)
+
+def LF_thermal(b_i,NTU,cp,w,rho,U,Fx):
+    """Longitud para desarrollar la transferencia de calor"""
+    return (b_i*NTU*cp*w*rho)/(2*sqrt(2)*U*Fx)
