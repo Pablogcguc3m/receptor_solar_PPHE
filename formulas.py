@@ -46,7 +46,10 @@ def NTU(t1in,t1out,t2in,t2out):
     """
     dT_a = abs(t1in-t2out)
     dT_b = abs(t1out-t2in)
-    LMTD = (dT_a-dT_b)/log(dT_a/dT_b)
+    if abs(dT_a-dT_b) < 1e-9*max(dT_a, dT_b):
+        LMTD = (dT_a+dT_b)/2      # limite dT_a -> dT_b: log(1) = 0 y la expresion general se indetermina
+    else:
+        LMTD = (dT_a-dT_b)/log(dT_a/dT_b)
     return abs(t1in-t1out)/LMTD
 
 

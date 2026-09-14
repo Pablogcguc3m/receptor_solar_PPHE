@@ -66,9 +66,14 @@ def imprimir_resultados(resultados):
 # cuya velocidad se despeja de la ec. (28). El fluido 2 (canal EXTERNO) es el
 # CALIENTE: cede calor al interno, y su velocidad sale del balance de masa (30).
 
+# Caso de estudio 1 del artículo (Tabla 4). Ojo con la numeración de esa tabla:
+# su "fluido 1" es el CALIENTE, que aquí es el externo (ΔP° = 40 kPa), y su
+# "fluido 2" es el FRÍO, que es el interno y el que impone la pérdida de carga
+# de la ec. (28): ΔP° = 60 kPa. En la Tabla 5 el frío satura sus 60 kPa en las
+# tres geometrías, mientras que el caliente se queda por debajo de sus 40 kPa.
               #    kg/m3       Pa*s       w/(m*K)   J/(kg*K)      °C         °C           Pa
-props_fl_int = {"rho":980, "mu":0.0008, "k":0.618, "cp":4175, "t_in":20,  "t_out":70, "del_P":50e3}  #Propiedades del fluido interno (frío)
-props_fl_ext = {"rho":980, "mu":0.0005, "k":0.654, "cp":4175, "t_in":150, "t_out":90}                #Propiedades del fluido externo (caliente)
+props_fl_int = {"rho":980, "mu":0.0008, "k":0.618, "cp":4175, "t_in":10,  "t_out":50, "del_P":60e3}  #Fluido 2 del artículo: interno, frío
+props_fl_ext = {"rho":980, "mu":0.0005, "k":0.654, "cp":4175, "t_in":70, "t_out":40}                #Fluido 1 del artículo: externo, caliente
 
 resultados = []
 
