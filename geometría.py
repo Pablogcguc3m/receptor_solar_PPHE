@@ -1,3 +1,8 @@
+"""Este script recoge las geometrías de los PPHE a estudiar."""
+
+from dataclasses import dataclass
+
+
 @dataclass(frozen=True)
 class PPHEGeometry:
     delta_pp: float  # Espesor de placa [m]
@@ -20,7 +25,7 @@ class PPHEGeometry:
 PPHE1 = PPHEGeometry(
     delta_pp=0.8e-3,
     b_i=3.4e-3,
-    b =5.5e-3,
+    b =3e-3,
     s_2l=42e-3,
     s_t=72e-3,
     d_sp=7.2e-3,
@@ -32,7 +37,7 @@ PPHE1 = PPHEGeometry(
 PPHE2 = PPHEGeometry(
     delta_pp=1.0e-3,
     b_i=3.0e-3,
-    b=7.5e-3,
+    b=2e-3,
     s_2l=72e-3,
     s_t=42e-3,
     d_sp=7.2e-3,
@@ -44,7 +49,7 @@ PPHE2 = PPHEGeometry(
 PPHE3 = PPHEGeometry(
     delta_pp=1.0e-3,
     b_i=7.0e-3,
-    b=20e-3,
+    b=2e-3,
     s_2l=72e-3,
     s_t=42e-3,
     d_sp=7.2e-3,
