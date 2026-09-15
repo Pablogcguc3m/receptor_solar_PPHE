@@ -66,6 +66,30 @@ def deE(b_i, b):
     """Diámetro equivalente externo (15) O.Arsenyeva"""
     return 2 * ((b_i+b)-b_i/sqrt(2))
 
+def f_chI(b_i, w_pp, w_e):
+    """Sección de paso del canal INTERNO (16) O.Arsenyeva. Es deI/2 por la anchura útil."""
+    return (b_i/sqrt(2))*(w_pp-2*w_e)
+
+def f_chE(b_i, b, w_pp, w_e):
+    """Sección de paso del canal EXTERNO (17) O.Arsenyeva. Es deE/2 por la anchura útil."""
+    return ((b_i+b)-b_i/sqrt(2))*(w_pp-2*w_e)
+
+def velocidad_ec3(G, rho, N, f_ch):
+    """Velocidad media a partir del gasto másico (3) O.Arsenyeva.
+
+    G es el gasto de toda la corriente y N el número de canales entre los que se
+    reparte, de forma que N*f_ch es la sección de paso total de ese lado.
+    """
+    return G/(rho*N*f_ch)
+
+def perdida_de_carga(f, L_F, d_e, rho, w, zeta_DZ=1.5):
+    """Pérdida de carga en el canal (19) O.Arsenyeva, zonas de distribución incluidas.
+
+    Es la inversa de LF_ploss: aquella despeja la longitud conocida la pérdida de
+    carga, y ésta la pérdida de carga conocida la longitud.
+    """
+    return f*L_F/d_e*rho*w**2/2 + zeta_DZ*rho*w**2
+
 def wI(del_P, rho, f, NTU, cp, w, U, Fx):
     """Cálculo de la velocidad interna según la fórmula (28) del artículo de O.Arsenyeva.
 

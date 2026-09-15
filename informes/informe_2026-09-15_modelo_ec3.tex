@@ -1,0 +1,266 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-noquoting]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+\hypersetup{colorlinks=true, linkcolor=black, urlcolor=blue}
+
+\title{Modelo termohidráulico de PPHE por la ecuación (3)\\
+       \large Contraste contra el segundo caso de estudio de O. Arsenyeva et al.}
+\author{Informe de cambios en el código}
+\date{15 de septiembre de 2026}
+
+\begin{document}
+\maketitle
+
+\section{Objetivo}
+
+Se reorienta el modelo para validarlo contra el \textbf{segundo} caso de estudio del artículo
+de Arsenyeva et al.\footnote{O. Arsenyeva, J. Tran, M. Piper, E. Kenig, \emph{An approach for
+pillow plate heat exchangers design for single-phase applications}, Appl. Therm. Eng. 147
+(2019) 579--591.} (tren de precalentamiento de crudo), en lugar del primero. El encargo
+concreto fue: tomar el número de chapas y la separación entre paneles de la Tabla 9 como datos
+de entrada, y obtener las velocidades con la ecuación (3) del artículo,
+\begin{equation}
+  w = \frac{G}{\rho \cdot f_{ch}},
+\end{equation}
+eliminando el método iterativo sobre la ecuación implícita (28).
+
+Además se restauran en la geometría los valores de $b$ y $b_i$ del artículo.
+
+\section{Resumen de cambios}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{llp{8.2cm}}
+\toprule
+Fichero & Estado & Cambio \\
+\midrule
+\texttt{geometría.py}      & Modificado & $b$ restaurado a los valores del artículo; comentario aclarando su procedencia \\
+\texttt{formulas.py}       & Modificado & Cuatro funciones nuevas: ecuaciones (16), (17), (3) y (19) \\
+\texttt{modelo\_antiguo.py} & Reescrito  & Modelo completo por la vía de la ecuación (3), contrastado contra la Tabla 9 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{\texttt{geometría.py}}
+
+Los valores de $b$ estaban en 3, 2 y 2\,mm por pruebas anteriores. Se restauran a 5.5, 7.5 y
+20\,mm. Los de $b_i$ (3.4, 3.0 y 7.0\,mm) ya eran correctos.
+
+Se añade un comentario al campo porque su procedencia es fácil de confundir: \textbf{$b$ no
+aparece en la Tabla 1} del artículo, que solo recoge la geometría del panel
+($\delta_{pp}$, $b_i$, $2s_L$, $s_T$, $w_{pp}$, $L_{pp}$, $w_e$). En el método del artículo $b$
+es la \emph{variable de diseño} que se barre; los tres valores anteriores son los óptimos que
+reporta su Tabla 5 para el primer caso de estudio.
+
+\subsection{\texttt{formulas.py}}
+
+Se añaden las ecuaciones que faltaban para poder trabajar desde el caudal:
+
+\begin{align}
+  f_{chI} &= \frac{b_i}{\sqrt{2}}\,(w_{pp}-2w_e) & &\text{(16)}\\
+  f_{chE} &= \left[(b_i+b)-\frac{b_i}{\sqrt{2}}\right](w_{pp}-2w_e) & &\text{(17)}\\
+  w &= \frac{G}{\rho\,N\,f_{ch}} & &\text{(3)}\\
+  \Delta P &= \zeta\,\frac{L_F}{d_e}\,\frac{\rho w^2}{2} + \zeta_{DZ}\,\rho w^2 & &\text{(19)}
+\end{align}
+
+La ecuación (19) es la inversa de la ya existente \texttt{LF\_ploss}: aquella despeja la
+longitud conocida la pérdida de carga, y ésta la pérdida de carga conocida la longitud.
+Nótese que $f_{ch} = d_e/2 \cdot (w_{pp}-2w_e)$ en ambos canales, es decir, el hueco medio por
+la anchura útil.
+
+\subsection{\texttt{modelo\_antiguo.py}}
+
+Se reescribe por completo. Desaparece la búsqueda iterativa del número de canales y la
+estructura pasa a recorrer las seis variantes de la Tabla 9 (todas ellas geometría PPHE2, con
+$b$ distinto en cada una). Se conserva la estructura de \texttt{modelo\_termohidraulico.py}:
+\emph{dataclass} de resultados, función de impresión, diccionarios de propiedades y bucle con
+los bloques \textsc{velocidades} / \textsc{cálculo interno} / \textsc{cálculo externo}.
+
+Se añade una segunda tabla de salida que contrasta lo calculado con lo que reporta la Tabla 9.
+
+\section{Dos interpretaciones que ha habido que deducir}
+
+El artículo no define con claridad dos cosas necesarias para el cálculo. Ambas se han resuelto
+por consistencia numérica con sus propios datos.
+
+\subsection{La columna $n_{pl}$ son chapas, no canales}
+
+Si se toma $n_{pl}$ como número de canales internos, las densidades que exige la Tabla 9 al
+aplicar la ecuación (3) resultan imposibles para hidrocarburos líquidos. Tomando
+$N = n_{pl}/2$ salen valores normales y, sobre todo, \emph{decrecen de forma monótona con la
+temperatura media de la corriente}, que es la comprobación que de verdad discrimina.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{crrrrrr}
+\toprule
+& \multicolumn{2}{c}{$N = n_{pl}$} & \multicolumn{2}{c}{$N = n_{pl}/2$} & \multicolumn{2}{c}{$T$ media [\textdegree C]}\\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+HE & $\rho_{int}$ & $\rho_{ext}$ & $\rho_{int}$ & $\rho_{ext}$ & int & ext\\
+\midrule
+1 & 384.8 & 360.2 & 769.6 & 720.4 & 166 & 154\\
+2 & 355.4 & 390.6 & 710.8 & 781.1 & 187 & 100\\
+3 & 311.3 & 327.7 & 622.5 & 655.4 & 243 & 170\\
+4 & 256.0 & 287.9 & 511.9 & 575.8 & 280 & 238\\
+5 & 274.4 & 308.7 & 548.8 & 617.4 & 277 & 236\\
+6 & 253.0 & 274.5 & 505.9 & 548.9 & 323 & 277\\
+\bottomrule
+\end{tabular}
+\caption{Densidades en kg/m$^3$ que implica la Tabla 9 bajo cada lectura de $n_{pl}$.}
+\end{table}
+
+La lectura encaja con la Nomenclatura del artículo, donde $N$ son los \emph{paneles} y el
+subíndice $pl$ denota \emph{chapa}, y explica que la ecuación (13) obligue a que $n_{pl}$ sea
+par: cada panel se forma soldando dos chapas.
+
+\subsection{El área de intercambio se calcula con las chapas}
+
+Como comprobación independiente de lo anterior, el área de la Tabla 9 se reproduce con
+$F = n_{pl}\,L_F\,(w_{pp}-2w_e)\,F_x$, usando el número de chapas. Con el número de canales
+aparece un factor $2$ sistemático.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{crrrrr}
+\toprule
+HE & $n_{pl}L_F W F_x$ & $F$ (Tabla 9) & cociente & $N L_F W F_x$ & cociente\\
+\midrule
+1 & 14.68 & 15.85 & 1.080 & 7.34 & 2.159\\
+2 &  8.81 &  9.43 & 1.070 & 4.40 & 2.141\\
+3 &  9.08 &  9.09 & 1.001 & 4.54 & 2.002\\
+4 & 13.09 & 12.71 & 0.971 & 6.54 & 1.942\\
+5 & 18.54 & 19.13 & 1.032 & 9.27 & 2.063\\
+6 & 12.07 & 11.79 & 0.977 & 6.04 & 1.953\\
+\bottomrule
+\end{tabular}
+\caption{Área de intercambio en m$^2$, calculada con la propia $L_F$ del artículo.}
+\end{table}
+
+Es coherente con el factor 2 de la ecuación (24): cada canal interno está envuelto por dos
+chapas, de modo que el área total es $2\,N\,F_{pl} = n_{pl}\,F_{pl}$. Ambas lecturas se
+sostienen mutuamente.
+
+\section{Verificación previa: la Tabla 9 es coherente}
+
+En trabajo anterior se determinó que las velocidades de la Tabla 5 (primer caso de estudio) no
+son reproducibles desde los datos de partida del propio artículo, por estar calculadas con el
+cociente de secciones de la ecuación (30) invertido. Antes de usar la Tabla 9 como referencia
+se comprobó que no arrastra el mismo problema.
+
+Partiendo de $w = G/(\rho N f_{ch})$ en los dos canales, el cociente de velocidades fija la
+relación de densidades. Solo una de las dos versiones da valores posibles:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{crrrrr}
+\toprule
+HE & $b$ [mm] & $f_{chE}/f_{chI}$ & $w_{ext}/w_{int}$ & $\rho_{int}/\rho_{ext}$ correcta & invertida\\
+\midrule
+1 & 1.5 & 1.1213 & 2.7638 & 1.068 & 0.850\\
+2 & 1.0 & 0.8856 & 2.8134 & 0.910 & 1.160\\
+3 & 2.0 & 1.3570 & 2.8537 & 0.950 & 0.516\\
+4 & 0.0 & 0.4142 & 1.7271 & 0.889 & 5.182\\
+5 & 0.5 & 0.6499 & 1.6123 & 0.889 & 2.104\\
+6 & 1.0 & 0.8856 & 3.5193 & 0.922 & 1.175\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La versión correcta da relaciones entre 0.889 y 1.068, todas plausibles. La invertida exigiría
+que en HE4 el producto caliente fuese 5.18 veces más denso que el crudo. El argumento decisivo
+son las variantes 4 y 5, que comparten fluidos (Producto 3 y 4 a 289.9\,\textdegree C contra
+crudo a 224.6\,\textdegree C): la versión correcta da \emph{exactamente} el mismo 0.889 en
+ambas, mientras que la invertida da 5.182 y 2.104.
+
+El motivo de la diferencia con el primer caso de estudio es claro: aquí el fluido caliente
+tiene menor caudal y va al canal interno, que es la configuración para la que se dedujeron las
+ecuaciones (22)--(28). En ella los dos significados del subíndice 1 --- corriente caliente y
+canal I --- coinciden, y no hay ambigüedad posible. \textbf{La Tabla 9 es, por tanto, mejor
+banco de pruebas que la Tabla 5.}
+
+\section{Resultados}
+
+\subsection{Caso de estudio 2 frente a la Tabla 9}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{crrrrrrrrrrrr}
+\toprule
+& \multicolumn{2}{c}{$u_{int}$ [m/s]} & \multicolumn{2}{c}{$u_{ext}$ [m/s]} & \multicolumn{2}{c}{$L_F$ [m]} & \multicolumn{2}{c}{$U$ [W/m$^2$K]} & \multicolumn{2}{c}{$F$ [m$^2$]} & \multicolumn{2}{c}{$\Delta P_{int}$ [kPa]}\\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}\cmidrule(lr){10-11}\cmidrule(lr){12-13}
+HE & calc & T9 & calc & T9 & calc & T9 & calc & T9 & calc & T9 & calc & T9\\
+\midrule
+1 & 1.943 & 1.943 & 5.370 & 5.370 & 2.411 & 2.250 & 2986 & 2863 & 15.73 & 15.85 & 155.5 & 100\\
+2 & 2.229 & 2.229 & 6.271 & 6.271 & 1.194 & 1.350 & 3261 & 2969 &  7.79 &  9.43 &  95.2 & 100\\
+3 & 2.051 & 2.051 & 5.853 & 5.853 & 1.063 & 1.670 & 2754 & 2125 &  5.78 &  9.09 &  65.9 & 100\\
+4 & 3.346 & 3.346 & 5.779 & 5.779 & 0.615 & 0.830 & 3269 & 3316 &  9.70 & 12.71 &  82.6 & 100\\
+5 & 2.920 & 2.920 & 4.708 & 4.708 & 0.841 & 1.100 & 2990 & 2937 & 14.17 & 19.13 &  90.7 & 100\\
+6 & 1.947 & 1.947 & 6.853 & 6.852 & 1.025 & 1.850 & 2510 & 3050 &  6.69 & 11.79 &  49.0 & 100\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Lectura de la tabla, con cuidado de no atribuirle más valor del que tiene:
+
+\begin{itemize}
+  \item Las \textbf{velocidades coinciden exactamente}, pero la comparación es
+        \emph{circular}: las densidades se han despejado de la propia Tabla 9 a falta de las
+        reales. Lo que sí confirma es que la lectura $N = n_{pl}/2$ es autoconsistente.
+  \item El \textbf{área de HE1} sale 15.73 frente a 15.85\,m$^2$, un 0.8\,\% de error, con la
+        corrección del apartado anterior.
+  \item $U$ cae dentro del 10--30\,\% pese a usar propiedades genéricas, lo que indica que el
+        orden de magnitud es razonable, pero no constituye validación.
+  \item $L_F$, $F$ y las pérdidas de carga arrastran el error de las propiedades provisionales.
+\end{itemize}
+
+\subsection{Caso de estudio 1 (\texttt{modelo\_termohidraulico.py})}
+
+Sin cambios en este informe; se recoge el estado actual como referencia.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{crrrrrrrr}
+\toprule
+Caso & $u_{int}$ & $u_{ext}$ & $Re_{int}$ & $Re_{ext}$ & $h_{int}$ & $h_{ext}$ & $U$ & $L_F$\\
+\midrule
+PPHE1 & 1.3591 & 0.6707 & 8.01e3 & 1.71e4 & 6556.96 & 6414.03 & 2790.04 & 3.8474\\
+PPHE2 & 0.8396 & 0.2834 & 4.36e3 & 9.31e3 & 8729.62 & 3184.88 & 2036.51 & 2.8816\\
+PPHE3 & 0.6119 & 0.1831 & 7.42e3 & 1.58e4 & 6074.59 & 1787.29 & 1271.25 & 7.5640\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Limitación pendiente}
+
+Las propiedades físicas de los fluidos del segundo caso de estudio \textbf{no están publicadas
+en el artículo}: las toma de su referencia [24],
+\begin{quote}
+O.P. Arsenyeva, L.L. Tovazhnyanskyy, P.O. Kapustenko, G.L. Khavin, A.P. Yuzbashyan,
+P.Y. Arsenyev, \emph{Two types of welded plate heat exchangers for efficient heat recovery in
+industry}, Appl. Therm. Eng. 105 (2016) 763--773.
+\end{quote}
+
+Mientras tanto el modelo lleva $\rho$ despejada de la Tabla 9 y valores genéricos de
+hidrocarburo para $\mu$, $k$ y $c_p$. El script avisa de ello al ejecutarse, mediante la
+constante \texttt{PROPIEDADES\_DE\_REF\_24}.
+
+\textbf{La prueba de validación real será la columna $\Delta P_{int}$}: el artículo satura los
+100\,kPa admisibles en las seis variantes, de modo que con las propiedades correctas las seis
+deberían dar 100. Actualmente van de 49 a 155\,kPa, y esa dispersión es la medida directa del
+error que introducen las propiedades provisionales.
+
+\section{Estado del repositorio}
+
+Rama \texttt{integracion-iteracion-velocidad}. Sin confirmar en el momento de escribir este
+informe: las modificaciones de \texttt{formulas.py} y \texttt{geometría.py}, y el fichero nuevo
+\texttt{modelo\_antiguo.py}.
+
+\end{document}
