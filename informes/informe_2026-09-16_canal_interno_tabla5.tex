@@ -1,0 +1,200 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-noquoting]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+\hypersetup{colorlinks=true, linkcolor=black, urlcolor=blue}
+
+\title{Canal interno por la ecuación (3)\\
+       \large Réplica del primer caso de estudio de O. Arsenyeva et al. (Tabla 5)}
+\author{Informe de cambios en el código}
+\date{16 de septiembre de 2026}
+
+\begin{document}
+\maketitle
+
+\section{Encargo}
+
+Reorientar \texttt{modelo\_f3.py} para que calcule \textbf{únicamente el canal interno} y
+replique la Tabla 5 del artículo\footnote{O. Arsenyeva, J. Tran, M. Piper, E. Kenig,
+\emph{An approach for pillow plate heat exchangers design for single-phase applications},
+Appl. Therm. Eng. 147 (2019) 579--591.}, con las propiedades del agua del primer caso de
+estudio, partiendo del número de chapas y la separación $b$ que da esa tabla, y \textbf{sin
+imponer la pérdida de carga}.
+
+\section{Cómo se ha hecho}
+
+El fichero se reescribe por completo, conservando la estructura de
+\texttt{modelo\_iterativo.py}: \emph{dataclass} de resultados, funciones de impresión, tabla de
+datos de entrada y bucle de cálculo. Desaparece todo el bloque del canal externo y, con él, el
+coeficiente global $U$.
+
+La cadena de cálculo queda reducida a:
+\begin{equation}
+  w = \frac{G}{\rho\,N\,f_{chI}},\qquad
+  Re = \frac{\rho\,w\,d_{eI}}{\mu},\qquad
+  Nu = n_3 Re^{n_4} Pr^{n_5},\qquad
+  h = \frac{Nu\,k}{d_{eI}},
+\end{equation}
+con $d_{eI}$ de la ecuación (14) y $f_{chI}$ de la (16). La pérdida de carga se obtiene
+después, como \emph{resultado}, de la ecuación (19).
+
+\subsection{Tres decisiones que conviene justificar}
+
+\paragraph{La longitud $L_F$ se toma de la Tabla 5.} Al eliminar el canal externo no hay
+coeficiente global $U$, y sin $U$ la ecuación (26) no puede dar la longitud. Como el encargo
+pide explícitamente no fijar la pérdida de carga, hace falta una longitud de algún sitio para
+poder evaluar la ecuación (19). Se toma la que reporta la propia Tabla 5 (2.072, 1.200 y
+2.230\,m), y se usa \emph{solo} para la pérdida de carga: no interviene en la velocidad ni en
+ninguno de los números adimensionales.
+
+\paragraph{La separación $b$ no interviene.} Tanto $d_{eI} = 2\,b_i/\sqrt{2}$ (ec. 14) como
+$f_{chI} = (b_i/\sqrt{2})(w_{pp}-2w_e)$ (ec. 16) dependen únicamente de $b_i$. La separación
+entre paneles solo entra en la geometría del canal externo, que aquí no se calcula. Se
+mantiene en la tabla de casos por completitud y porque así lo pedía el encargo, pero el
+programa avisa por consola de que no afecta al resultado.
+
+\paragraph{$n_{pl}$ son chapas.} Se conserva la constante \texttt{CHAPAS\_POR\_PANEL}, con la
+que los canales internos son $n_{pl}/2$. El apartado de resultados recoge las dos lecturas.
+
+\section{Datos de entrada}
+
+Fluido frío (interno), de la Tabla 4: $\rho=980$\,kg/m$^3$, $\mu=8\cdot10^{-4}$\,Pa$\cdot$s,
+$k=0.618$\,W/(m$\cdot$K), $c_p=4175$\,J/(kg$\cdot$K), de 10 a 50\,\textdegree C, con
+$G=30$\,kg/s.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+Caso & $b_i$ [mm] & $n_{pl}$ & $b$ [mm] & $L_F$ [m]\\
+\midrule
+PPHE1 & 3.4 &  70 &  5.5 & 2.072\\
+PPHE2 & 3.0 & 112 &  7.5 & 1.200\\
+PPHE3 & 7.0 &  66 & 20.0 & 2.230\\
+\bottomrule
+\end{tabular}
+\caption{$n_{pl}$, $b$ y $L_F$ de la Tabla 5; $b_i$ de la Tabla 1.}
+\end{table}
+
+\section{Resultados}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lrrrrrrrr}
+\toprule
+Caso & $N$ & $f_{chI}$ [m$^2$] & $d_{eI}$ [m] & $u$ [m/s] & $Re$ & $Nu$ & $\zeta$ & $h$ [W/m$^2$K]\\
+\midrule
+PPHE1 & 35 & 6.4912e-4 & 4.8083e-3 & 1.3474 & 7937 &  50.69 & 0.0794 & 6514.48\\
+PPHE2 & 56 & 5.7276e-4 & 4.2426e-3 & 0.9544 & 4960 &  66.22 & 0.2449 & 9645.19\\
+PPHE3 & 33 & 1.3364e-3 & 9.8995e-3 & 0.6941 & 8418 & 106.06 & 0.4162 & 6621.23\\
+\bottomrule
+\end{tabular}
+\caption{Canal interno. $Pr = 5.4045$ en los tres casos.}
+\end{table}
+
+\subsection{Contraste con la Tabla 5 (T5)}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrrrrrrrr}
+\toprule
+& \multicolumn{3}{c}{$u$ [m/s]} & \multicolumn{2}{c}{$Re$} & \multicolumn{2}{c}{$h$ [W/m$^2$K]} & \multicolumn{2}{c}{$\Delta P$ [kPa]}\\
+\cmidrule(lr){2-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}\cmidrule(lr){9-10}
+Caso & calc & T5 & cociente & calc & T5 & calc & T5 & calc & T5\\
+\midrule
+PPHE1 & 1.3474 & 1.835 & 1.362 & 7937 & 10810 & 6514 &  9804 & 33.09 & 60\\
+PPHE2 & 0.9544 & 1.280 & 1.341 & 4960 &  6670 & 9645 & 11220 & 32.26 & 60\\
+PPHE3 & 0.6941 & 0.940 & 1.354 & 8418 & 11390 & 6621 & 10206 & 22.84 & 60\\
+\bottomrule
+\end{tabular}
+\caption{Lectura $N = n_{pl}/2$.}
+\end{table}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrrrrrr}
+\toprule
+& \multicolumn{3}{c}{$u$ [m/s]} & \multicolumn{2}{c}{$Re$} & \multicolumn{2}{c}{$\Delta P$ [kPa]}\\
+\cmidrule(lr){2-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}
+Caso & calc & T5 & cociente & calc & T5 & calc & T5\\
+\midrule
+PPHE1 & 0.6737 & 1.835 & 2.724 & 3968 & 10810 & 10.56 & 60\\
+PPHE2 & 0.4772 & 1.280 & 2.682 & 2480 &  6670 &  9.22 & 60\\
+PPHE3 & 0.3471 & 0.940 & 2.708 & 4209 & 11390 &  6.32 & 60\\
+\bottomrule
+\end{tabular}
+\caption{Lectura $N = n_{pl}$.}
+\end{table}
+
+\section{Discusión}
+
+\subsection{Ninguna de las dos lecturas reproduce la Tabla 5}
+
+Con $N = n_{pl}/2$ la velocidad sale un 26\,\% por debajo; con $N = n_{pl}$, un 63\,\%. Lo
+relevante no es la magnitud del error sino su \textbf{constancia}: los cocientes son 1.362,
+1.341 y 1.354 en el primer caso, y 2.724, 2.682 y 2.708 en el segundo. Tres geometrías con
+$b_i$ entre 3 y 7\,mm y $n_{pl}$ entre 66 y 112 dan el mismo factor dentro del 1.5\,\%.
+
+Un error aleatorio no se comporta así. Un factor constante indica una diferencia
+\emph{sistemática de definición} entre la sección de paso que usa el artículo y la de su
+ecuación (16), o entre su recuento de canales y $n_{pl}$.
+
+El programa lo cuantifica directamente con la columna $N$ implícito, es decir, los canales que
+harían falta para dar la velocidad que reporta la Tabla 5:
+\begin{equation}
+  N_{\text{implícito}} = \frac{G}{\rho\,w_{T5}\,f_{chI}}
+  = 25.70,\quad 41.76,\quad 24.37
+\end{equation}
+frente a los 70, 112 y 66 chapas de la tabla. El cociente $n_{pl}/N_{\text{implícito}}$ vale
+2.72, 2.68 y 2.71.
+
+\subsection{Coherencia con lo detectado anteriormente}
+
+Este resultado concuerda con el análisis previo del primer caso de estudio, en el que ya se
+determinó que las velocidades de la Tabla 5 implican un caudal frío de unos 81\,kg/s frente a
+los 30\,kg/s de la Tabla 4, es decir, el mismo factor 2.72. El presente cálculo lo confirma por
+una vía independiente y más directa, usando solo la ecuación (3) y sin intervenir en ningún
+momento la ecuación (30) ni la constante discutida de la ecuación (28).
+
+Conviene subrayar el contraste con el segundo caso de estudio: allí la lectura
+$N = n_{pl}/2$ sí produce densidades coherentes y el área de la Tabla 9 se reproduce con un
+error del 0.8\,\% en HE1. El problema es específico de la Tabla 5.
+
+\subsection{Pérdida de carga}
+
+Con la longitud de la propia Tabla 5, la pérdida de carga resulta de 33.09, 32.26 y
+22.84\,kPa, frente a los 60\,kPa que el artículo declara agotados en las tres geometrías. El
+déficit es coherente con la velocidad baja: al ser $\Delta P$ aproximadamente proporcional a
+$w^2$, un factor 1.35 en velocidad son unos 1.8 en pérdida de carga, y en efecto
+$60/33.09 = 1.81$.
+
+Es decir, \textbf{el déficit de pérdida de carga no es un error adicional}, sino la misma
+discrepancia de velocidad propagada. Esto es una comprobación interna útil: el modelo del canal
+interno es consistente consigo mismo, y toda la desviación respecto al artículo entra por un
+único punto, la velocidad.
+
+\section{Ficheros}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{llp{7.8cm}}
+\toprule
+Fichero & Estado & Cambio\\
+\midrule
+\texttt{modelo\_f3.py} & Reescrito & Solo canal interno, caso de estudio 1, $n_{pl}$ y $b$ de la Tabla 5, $\Delta P$ como resultado\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+No se ha modificado ningún otro fichero. \texttt{formulas.py},
+\texttt{asignacion.py}, \texttt{geometría.py} e \texttt{iteracion\_vel.py} quedan intactos, y
+\texttt{modelo\_iterativo.py} tampoco se toca.
+
+\end{document}
