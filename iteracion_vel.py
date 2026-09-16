@@ -1,6 +1,4 @@
 """Este script calcula, mediante un método iterativo la velocidad en el canal interno y externo"""
-from math import sqrt, log
-from scipy.optimize import brentq
 from formulas import (fI, fE, NuI, NuE, Re, Pr, NTU, deI, deE, wI, wE, U, LF_ploss, LF_thermal)
 
 
@@ -29,7 +27,7 @@ def resolver_velocidad(rho1, mu1, cp1, k1, n1_fric, n2_fric, n3_nu, n4_nu, n5_nu
         Nu2 = NuE(Re2, Pr2, f2)
         h2 = Nu2 * k2 / de2
 
-        U_actual = U(h1, k1, de1, Nu1, h2, k2, de2, Nu2, delta_w)
+        U_actual = U(h1, h2, delta_w)
 
         w1_nuevo = wI(del_P1, rho1, f1, NTU0, cp1, w1, U_actual, Fx)
         w1_relajado = w1 + relajacion*(w1_nuevo - w1)
@@ -57,7 +55,7 @@ def resolver_velocidad(rho1, mu1, cp1, k1, n1_fric, n2_fric, n3_nu, n4_nu, n5_nu
     Pr2 = Pr(cp2, mu2, k2)
     Nu2 = NuE(Re2, Pr2, f2)
 
-    U_actual = U(Nu1*k1/de1, k1, de1, Nu1, Nu2*k2/de2, k2, de2, Nu2, delta_w)
+    U_actual = U(Nu1*k1/de1, Nu2*k2/de2, delta_w)
 
     LF_1 = LF_ploss(de1, f1, del_P1, rho1, w1)
     LF_2 = LF_thermal(bi, NTU0, cp1, w1, rho1, U_actual, Fx)

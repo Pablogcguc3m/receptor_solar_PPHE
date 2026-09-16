@@ -11,10 +11,9 @@ Correlaciones tomadas de O. Arsenyeva et al.
 """
 
 from dataclasses import dataclass
-from math import sqrt
 import formulas as form
 import asignacion as asig
-import geometría as geom
+import geometria as geom
 from iteracion_vel import resolver_velocidad
 # =============================================================================
 # Estructuras de datos
