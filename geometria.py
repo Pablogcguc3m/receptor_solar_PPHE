@@ -32,19 +32,19 @@ PPHE1 = PPHEGeometry(
     s_t=72e-3,
     d_sp=7.2e-3,
     w_pp=300e-3,
-    l_pp=1000e-3,
+    l_pp=1,
     w_e=15e-3,
     Fx=1.01
 )
 PPHE2 = PPHEGeometry(
     delta_pp=1.0e-3,
     b_i=3.0e-3,
-    b=7.5e-3,
+    b=1.5e-3,
     s_2l=72e-3,
     s_t=42e-3,
     d_sp=7.2e-3,
     w_pp=300e-3,
-    l_pp=1000e-3,
+    l_pp=1,
     w_e=15e-3,
     Fx=1.007
 )
@@ -56,7 +56,7 @@ PPHE3 = PPHEGeometry(
     s_t=42e-3,
     d_sp=7.2e-3,
     w_pp=300e-3,
-    l_pp=1000e-3,
+    l_pp=1,
     w_e=15e-3,
     Fx=1.045
 )

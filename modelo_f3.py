@@ -44,14 +44,16 @@ CHAPAS_POR_PANEL = 2      # canales internos = n_pl / CHAPAS_POR_PANEL ; ponlo a
 # =============================================================================
 
               #   kg/m3       Pa*s      w/(m*K)   J/(kg*K)      °C         °C        kg/s
-props_fl_int = {"rho":980, "mu":0.0008, "k":0.618, "cp":4175, "t_in":10, "t_out":50, "G":30}  #Fluido 2 del artículo: interno, frío
+#props_fl_int = {"rho":980, "mu":0.0008, "k":0.618, "cp":4175, "t_in":10, "t_out":50, "G":30}  #Fluido 2 del artículo: interno, frío
+props_fl_int = {"rho":780, "mu":0.04443e-3, "k":0.0714, "cp":2900, "t_in":177.4, "t_out":155.6, "G":10.278} #Producto 2 (Tabla 7)
+
 
 # n_pl, b y L_F son de la Tabla 5; el bloque t5 recoge lo que el artículo
 # reporta del lado frío, para contrastar.
 CASOS = [
     dict(nombre="PPHE1", geometria=geom.PPHE1, n_pl=70,  b=5.5e-3, L_F=2.072,
          t5=dict(w=1.835, Re=1.081e4, del_P=6.000e4, h=9804)),
-    dict(nombre="PPHE2", geometria=geom.PPHE2, n_pl=112, b=7.5e-3, L_F=1.200,
+    dict(nombre="PPHE2", geometria=geom.PPHE2, n_pl=24, b=1.5e-3, L_F=2.25,
          t5=dict(w=1.280, Re=6.670e3, del_P=6.000e4, h=11220)),
     dict(nombre="PPHE3", geometria=geom.PPHE3, n_pl=66,  b=20e-3,  L_F=2.230,
          t5=dict(w=0.940, Re=1.139e4, del_P=6.000e4, h=10206)),
