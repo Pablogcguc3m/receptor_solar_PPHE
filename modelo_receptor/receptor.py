@@ -105,6 +105,16 @@ def k_acero(T):
     return 14.6 + 0.0127 * (T - pf.CERO_CELSIUS)
 
 
+def perdidas(T_w, A, h_ext=H_EXT, eps=EPSILON):
+    """Calor que una porción de área A pierde al ambiente y al cielo [W].
+
+    Está fuera de la clase porque se llama desde el interior de la bisección,
+    miles de veces por porción: así se le pasan h_ext y eps como locales en vez
+    de buscarlos en el objeto en cada llamada.
+    """
+    return (h_ext * (T_w - T_AMB) + eps * SIGMA * (T_w ** 4 - T_CIELO ** 4)) * A
+
+
 def _biseccion(f, a, b, tol=1e-6, iteraciones=80):
     """Raíz de f en [a, b] por bisección. Exige que f(a) y f(b) tengan signo opuesto."""
     fa, fb = f(a), f(b)
@@ -114,10 +124,11 @@ def _biseccion(f, a, b, tol=1e-6, iteraciones=80):
         if b - a < tol:
             break
         m = 0.5 * (a + b)
-        if fa * f(m) <= 0:
+        fm = f(m)               # Una sola evaluación por iteración: f es lo caro de aquí
+        if fa * fm <= 0:
             b = m
         else:
-            a, fa = m, f(m)
+            a, fa = m, fm
     return 0.5 * (a + b)
 
 
@@ -142,11 +153,16 @@ class Receptor:
     eps: float = EPSILON
     alfa: float = ABSORTIVIDAD
     n: object = field(init=False)           # Constantes n1..n5 de la geometría
+    seccion: float = field(init=False)      # Sección de paso total del canal interno [m2]
+    de: float = field(init=False)           # Diámetro equivalente del canal interno [m]
 
     def __post_init__(self):
+        """Fija de una vez lo que solo depende de la geometría, no de T."""
         i = self.panel
-        object.__setattr__(self, "n", asig.asignacion_de_constantes(
-            sT=i.s_t, s2L=i.s_2l, dsp=i.d_sp, h=i.b_i))
+        fijar = lambda campo, valor: object.__setattr__(self, campo, valor)
+        fijar("n", asig.asignacion_de_constantes(sT=i.s_t, s2L=i.s_2l, dsp=i.d_sp, h=i.b_i))
+        fijar("seccion", i.b_i / sqrt(2) * self.mapa.W)   # Ec. (16), sin soldaduras de borde
+        fijar("de", form.deI(i.b_i))                      # Ec. (14)
 
     # -- Coeficiente de película interno -------------------------------------
 
@@ -158,54 +174,58 @@ class Receptor:
         trabajo es razonable.
         """
         pr = self.fluido.propiedades(T, self.p)
-        seccion = self.panel.b_i / sqrt(2) * self.mapa.W     # Sección de paso total, ec. (16) sin soldaduras de borde
-        u = self.G / (pr.rho * seccion)                      # Ec. (3)
-        de = form.deI(self.panel.b_i)                        # Ec. (14)
+        de, n = self.de, self.n
+        u = self.G / (pr.rho * self.seccion)                 # Ec. (3)
         Re = form.Re(rho=pr.rho, u=u, dh=de, mu=pr.mu)
-        Nu = form.NuI(n3=self.n.n3, n4=self.n.n4, n5=self.n.n5, Re=Re, Pr=pr.Pr)
+        Nu = form.NuI(n3=n.n3, n4=n.n4, n5=n.n5, Re=Re, Pr=pr.Pr)
         return Nu * pr.k / de, u, Re
 
     # -- Balance de una porción ----------------------------------------------
 
-    def _perdidas(self, T_w, A):
-        """Calor que la porción pierde al ambiente y al cielo [W]."""
-        return (self.h_ext * (T_w - T_AMB) * A
-                + self.eps * SIGMA * (T_w ** 4 - T_CIELO ** 4) * A)
-
     def _porcion(self, q_inc, T_ent, G_col, A):
-        """Resuelve una porción. Devuelve (T_sal, T_w, q_fluido)."""
+        """Resuelve una porción. Devuelve (T_sal, T_w, q_fluido).
+
+        Todo lo que hace falta dentro de las bisecciones se saca del objeto
+        aquí, una sola vez: lo de dentro se llama miles de veces por porción.
+        """
+        fluido, e = self.fluido, self.panel.delta_pp
+        h_ext, eps = self.h_ext, self.eps
+        h_interno = self.h_interno
         q_abs = self.alfa * q_inc
 
         def cerrar(T_sal):
             """Calor al fluido y pared, para una temperatura de salida de prueba."""
             T_f = 0.5 * (T_ent + T_sal)
-            h_int = self.h_interno(T_f)[0]
+            h_int = h_interno(T_f)[0]
+
+            def resistencia(T_w):
+                """Resistencia chapa + película interna, por unidad de área [m2*K/W]."""
+                return e / k_acero(0.5 * (T_w + T_f)) + 1.0 / h_int
 
             def balance_pared(T_w):
-                R = self.panel.delta_pp / k_acero(0.5 * (T_w + T_f)) + 1.0 / h_int
-                return q_abs - self._perdidas(T_w, A) - A * (T_w - T_f) / R
+                return (q_abs - perdidas(T_w, A, h_ext, eps)
+                        - A * (T_w - T_f) / resistencia(T_w))
 
             # La pared está entre el cielo (pierde más de lo que recibe) y la
             # temperatura a la que solo la radiación ya se lleva todo el flujo.
-            T_w_max = max(T_f, (q_abs / (A * self.eps * SIGMA) + T_CIELO ** 4) ** 0.25) + 1.0
+            T_w_max = max(T_f, (q_abs / (A * eps * SIGMA) + T_CIELO ** 4) ** 0.25) + 1.0
             T_w = _biseccion(balance_pared, T_CIELO, T_w_max)
-            R = self.panel.delta_pp / k_acero(0.5 * (T_w + T_f)) + 1.0 / h_int
-            return A * (T_w - T_f) / R, T_w
+            return A * (T_w - T_f) / resistencia(T_w), T_w
 
         def desequilibrio(T_sal):
             q_fluido, _ = cerrar(T_sal)
-            return q_fluido - G_col * (self.fluido.h(T_sal) - self.fluido.h(T_ent))
+            return q_fluido - G_col * (fluido.h(T_sal) - fluido.h(T_ent))
 
         # Cota superior: todo el calor absorbido al fluido, con el cp de la
         # entrada, que es el menor del tramo. Como el cp del aire crece con T, la
         # temperatura real queda por debajo.
-        T_max = min(T_ent + q_abs / (G_col * self.fluido.cp(T_ent)), self.fluido.T_max)
+        T_max = min(T_ent + q_abs / (G_col * fluido.cp(T_ent)), fluido.T_max)
         if desequilibrio(T_max) > 0:
             raise ValueError(
-                f"El fluido se saldría de {self.fluido.T_max:.0f} K en una porción. "
+                f"El fluido se saldría de {fluido.T_max:.0f} K en una porción. "
                 f"Sube el gasto o baja el flujo incidente."
             )
-        T_sal = _biseccion(desequilibrio, self.fluido.T_min, T_max)
+        T_sal = _biseccion(desequilibrio, fluido.T_min, T_max)
         q_fluido, T_w = cerrar(T_sal)
         return T_sal, T_w, q_fluido
 
@@ -213,18 +233,18 @@ class Receptor:
 
     def resolver(self):
         """Resuelve la placa entera, de abajo arriba y columna a columna."""
-        dx, dy = self.mapa.W / self.M, self.mapa.L / self.N
-        A = dx * dy
-        G_col = self.G / self.M
-        flujo = self.mapa.mapa_nodal(self.M, self.N)      # [W/m2] medio de cada porción
+        M, N, porcion = self.M, self.N, self._porcion
+        A = (self.mapa.W / M) * (self.mapa.L / N)
+        G_col = self.G / M
+        flujo = self.mapa.mapa_nodal(M, N)                # [W/m2] medio de cada porción
 
-        T_fluido = [[0.0] * self.M for _ in range(self.N)]   # T de salida de cada porción
-        T_pared = [[0.0] * self.M for _ in range(self.N)]
+        T_fluido = [[0.0] * M for _ in range(N)]          # T de salida de cada porción
+        T_pared = [[0.0] * M for _ in range(N)]
         q_util = 0.0
-        for i in range(self.M):
+        for i in range(M):
             T = self.T_ent
-            for j in range(self.N):                        # De abajo arriba
-                T, T_w, q = self._porcion(flujo[j][i] * A, T, G_col, A)
+            for j in range(N):                            # De abajo arriba
+                T, T_w, q = porcion(flujo[j][i] * A, T, G_col, A)
                 T_fluido[j][i], T_pared[j][i] = T, T_w
                 q_util += q
         return Resultado(receptor=self, T_fluido=T_fluido, T_pared=T_pared, q_util=q_util)
