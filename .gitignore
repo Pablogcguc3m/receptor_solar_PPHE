@@ -216,3 +216,17 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Informes de cambios (LaTeX y PDF). Se generan por tarea y no se versionan.
+informes/
+
+# Intermedios de LaTeX, por si hubiera algun .tex fuera de informes/
+*.aux
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# PDF generados junto a un .tex versionado (la fuente si va, el generado no)
+modelo_receptor/*.pdf
