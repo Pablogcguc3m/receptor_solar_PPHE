@@ -227,3 +227,6 @@ informes/
 *.fls
 *.fdb_latexmk
 *.synctex.gz
+
+# PDF generados junto a un .tex versionado (la fuente si va, el generado no)
+modelo_receptor/*.pdf
