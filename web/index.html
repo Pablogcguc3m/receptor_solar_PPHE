@@ -58,6 +58,15 @@
   --sans:"Inter",system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
 }
 
+/* El campo de brasas cubre toda la pagina, fijo al viewport y no al documento:
+   asi ocupa memoria constante por alta que sea la pagina. Va por detras de todo
+   y no intercepta el raton. Los paneles de contenido son opacos, de modo que las
+   brasas solo asoman por los huecos, los margenes y la portada. */
+#brasas{
+  position:fixed; inset:0; width:100%; height:100%;
+  z-index:0; pointer-events:none; display:block;
+}
+
 /* ----------------------------------------------------------------- base -- */
 *{box-sizing:border-box}
 body{
@@ -109,7 +118,8 @@ h3{font-size:16px; line-height:1.35; letter-spacing:-.008em}
 .chip:hover{border-color:rgba(255,255,255,.55); background:rgba(255,255,255,.06)}
 .chip[aria-pressed="true"]{background:var(--ink); color:#000; border-color:var(--ink)}
 
-.envoltorio{max-width:1420px; margin:0 auto; padding:0 24px; padding-block:0 64px}
+.envoltorio{max-width:1420px; margin:0 auto; padding:0 24px; padding-block:0 64px;
+            position:relative; z-index:1}
 
 /* ----------------------------------------------------------------- hero -- */
 /* Banda de apertura contenida, no a pantalla completa: esto es un instrumento
@@ -125,12 +135,6 @@ h3{font-size:16px; line-height:1.35; letter-spacing:-.008em}
   pointer-events:none; z-index:0;
 }
 .portada > *{position:relative; z-index:1}
-/* El campo de brasas va por encima del resplandor y por debajo del texto, y no
-   intercepta el raton: el cursor lo lee la seccion entera, no el lienzo. */
-#brasas{
-  position:absolute; inset:0; width:100%; height:100%;
-  z-index:0; pointer-events:none; display:block;
-}
 .portada h1{max-width:19ch}
 .portada .entradilla{
   margin-top:16px; max-width:62ch; font-size:16.5px; line-height:1.6;
@@ -240,7 +244,7 @@ select{
 
 .tira{
   display:flex; flex-wrap:wrap; gap:2px 30px;
-  border:1px solid var(--linea); border-top:0;
+  background:var(--ground); border:1px solid var(--linea); border-top:0;
   border-radius:0 0 var(--r) var(--r); padding:14px 18px; margin:-1px 0 40px;
 }
 .dato{display:flex; align-items:baseline; gap:8px; padding:3px 0}
@@ -325,6 +329,8 @@ img{max-width:100%}
 </head>
 <body>
 
+<canvas id="brasas" aria-hidden="true"></canvas>
+
 <header class="cabecera">
   <div class="cabecera-int">
     <div class="marca">
@@ -342,7 +348,6 @@ img{max-width:100%}
 <div class="envoltorio">
 
 <section class="portada">
-  <canvas id="brasas" aria-hidden="true"></canvas>
   <h1>La distribución de calor de un receptor solar</h1>
   <p class="entradilla">
     Una placa de acero recibe la mancha de un campo de helióstatos y la atraviesa
@@ -1099,20 +1104,23 @@ if (mq.addEventListener) mq.addEventListener('change', function(){ if (ultimo) p
 })();
 
 /* ===========================================================================
-   Campo de brasas de la portada
+   Campo de brasas del fondo
    ---------------------------------------------------------------------------
-   Lienzo 2D, sin librerias. Las particulas SUBEN, como el aire caliente que
-   atraviesa la placa, y el cursor hace de foco de calor: las aparta y las
-   pone al blanco al acercarse. La decoracion cuenta lo mismo que el modelo.
+   Lienzo 2D, sin librerias, FIJO al viewport y no al documento: asi la memoria
+   es constante por larga que sea la pagina, en vez de crecer con ella. Las
+   brasas SUBEN, como el aire caliente que atraviesa la placa, y el cursor hace
+   de foco de calor: aparta las que tiene cerca y las lleva del naranja al
+   blanco.
 
-   Va en su propio modulo y no toca nada del calculo. Las cuatro guardas que
-   lleva son lo que impide que un adorno se coma la herramienta:
+   Los paneles de contenido son opacos a proposito, de modo que las brasas solo
+   asoman por los huecos entre tarjetas, los margenes y la portada. Sobre las
+   cifras nunca pasa nada.
 
+   Tres guardas impiden que el adorno se coma la herramienta:
      1. Se detiene mientras se arrastra un deslizador, que es cuando el modelo
         necesita los fotogramas para recalcular.
-     2. Se detiene cuando la portada sale de pantalla.
-     3. Se detiene cuando la pestana pasa a segundo plano.
-     4. Respeta prefers-reduced-motion: pinta un fotograma y se queda quieto.
+     2. Se detiene con la pestana en segundo plano.
+     3. Respeta prefers-reduced-motion: pinta un fotograma y se queda quieto.
    =========================================================================== */
 (function(){
 'use strict';
@@ -1121,19 +1129,22 @@ var lienzo = document.getElementById('brasas');
 if (!lienzo || !lienzo.getContext) return;
 var ctx = lienzo.getContext('2d');
 if (!ctx) return;
-var portada = lienzo.parentElement;
 var menosMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 var W = 0, H = 0, dpr = 1;
 var brasas = [];
 var raton = { x: 0, y: 0, activo: false };
-var enPantalla = true, pestanaVisible = true, arrastrando = false;
+var pestanaVisible = true, arrastrando = false;
 var animacion = null;
 
 var ALCANCE = 135;      // radio de influencia del cursor [px]
 var EMPUJE  = 1100;     // intensidad del empujon
 
-function cuantas(){ return W < 700 ? 40 : (W < 1150 ? 75 : 115); }
+// Densidad constante por area, no numero fijo: una brasa por cada 6500 px2,
+// con tope para no castigar pantallas grandes ni baterias pequenas.
+function cuantas(){
+  return Math.max(40, Math.min(260, Math.round(W * H / 6500)));
+}
 
 function nacer(dentro){
   return {
@@ -1151,9 +1162,8 @@ function nacer(dentro){
 }
 
 function medir(){
-  var caja = portada.getBoundingClientRect();
-  W = Math.max(1, Math.round(caja.width));
-  H = Math.max(1, Math.round(caja.height));
+  W = Math.max(1, window.innerWidth);
+  H = Math.max(1, window.innerHeight);
   dpr = Math.min(window.devicePixelRatio || 1, 2);
   lienzo.width  = Math.round(W * dpr);
   lienzo.height = Math.round(H * dpr);
@@ -1210,7 +1220,7 @@ function avanzar(){
 }
 
 function puedeCorrer(){
-  return enPantalla && pestanaVisible && !arrastrando && !menosMovimiento.matches;
+  return pestanaVisible && !arrastrando && !menosMovimiento.matches;
 }
 function marco(){
   if (!puedeCorrer()){ animacion = null; return; }
@@ -1225,14 +1235,15 @@ function parar(){
 }
 
 // -- El cursor -------------------------------------------------------------
-portada.addEventListener('pointermove', function(e){
-  var caja = portada.getBoundingClientRect();
-  raton.x = e.clientX - caja.left;
-  raton.y = e.clientY - caja.top;
+// El lienzo esta fijo al viewport, asi que clientX/clientY ya son sus propias
+// coordenadas: no hay que restar la posicion de ningun contenedor.
+window.addEventListener('pointermove', function(e){
+  raton.x = e.clientX;
+  raton.y = e.clientY;
   raton.activo = true;
   arrancar();
 }, { passive: true });
-portada.addEventListener('pointerleave', function(){ raton.activo = false; }, { passive: true });
+document.addEventListener('pointerleave', function(){ raton.activo = false; }, { passive: true });
 
 // -- Guarda 1: el modelo tiene prioridad mientras se arrastra --------------
 document.addEventListener('pointerdown', function(e){
@@ -1246,35 +1257,26 @@ document.addEventListener('pointerdown', function(e){
   }, { passive: true });
 });
 
-// -- Guarda 2: fuera de pantalla, quieto -----------------------------------
-if ('IntersectionObserver' in window){
-  new IntersectionObserver(function(entradas){
-    enPantalla = entradas[0].isIntersecting;
-    if (enPantalla) arrancar(); else parar();
-  }, { threshold: 0 }).observe(portada);
-}
-
-// -- Guarda 3: pestana en segundo plano ------------------------------------
+// -- Guarda 2: pestana en segundo plano ------------------------------------
 document.addEventListener('visibilitychange', function(){
   pestanaVisible = !document.hidden;
   if (pestanaVisible) arrancar(); else parar();
 });
 
-// -- Guarda 4: quien pide menos movimiento, no lo tiene --------------------
+// -- Guarda 3: quien pide menos movimiento, no lo tiene --------------------
 function atenderPreferencia(){
   if (menosMovimiento.matches){ parar(); medir(); pintar(); }
   else arrancar();
 }
 if (menosMovimiento.addEventListener) menosMovimiento.addEventListener('change', atenderPreferencia);
 
+// Redimensionar el lienzo lo borra, asi que se repinta SIEMPRE tras medir: si
+// rAF esta estrangulado no habria fotograma que lo restaurara.
 var remedir;
 window.addEventListener('resize', function(){
   clearTimeout(remedir);
   remedir = setTimeout(function(){ medir(); pintar(); }, 150);
 });
-if ('ResizeObserver' in window){
-  new ResizeObserver(function(){ medir(); pintar(); }).observe(portada);
-}
 
 medir();
 pintar();          // un fotograma ya visible antes de animar nada
