@@ -11,14 +11,18 @@ cielo por radiación, ambas gobernadas por la temperatura de la pared T_w; el
 resto atraviesa la chapa por conducción y pasa al fluido por convección interna:
 
     q_inc = h_ext*(T_w - T_amb)*A + eps*sigma*(T_w^4 - T_cielo^4)*A + q_fluido
-    q_fluido = A*(T_w - T_f)/(e/k_acero + 1/h_int)        [T_f = (T_ent+T_sal)/2]
+    q_fluido = A*(T_w - T_f)/(e/K_ACERO + 1/h_int)        [T_f = (T_ent+T_sal)/2]
     q_fluido = G_col*(h(T_sal) - h(T_ent))                [entalpías de props_fluido]
 
 Dos ecuaciones y dos incógnitas, T_w y T_sal, no lineales por el T_w^4 y porque
-las propiedades dependen de la temperatura. Se resuelven por bisección anidada:
-para cada T_sal de prueba se despeja T_w, y con él el calor al fluido, hasta que
-cuadra con el salto de entalpía. La bisección se usa por robustez: nunca
-diverge, y el coste no importa con mallas de este tamaño.
+las propiedades del fluido dependen de la temperatura. Se resuelven por
+bisección anidada: para cada T_sal de prueba se despeja T_w, y con él el calor
+al fluido, hasta que cuadra con el salto de entalpía. La bisección se usa por
+robustez: nunca diverge, y el coste no importa con mallas de este tamaño.
+
+La conductividad del acero se toma CONSTANTE (K_ACERO). La chapa es el 2.7 % de
+la resistencia al fluido, de modo que su temperatura no merece una iteración
+propia; ver la nota de la constante.
 
 EL COEFICIENTE INTERNO es el del canal interno de una pillow plate, calculado
 con la misma cadena que modelo_f3.py del otro paquete y con sus mismos módulos:
@@ -96,20 +100,25 @@ ABSORTIVIDAD = 1.0        # Fracción del flujo incidente que se absorbe [-]. Ve
 # sería 0.95, y basta cambiar este número.
 
 
-def k_acero(T):
-    """Conductividad térmica del AISI 321 [W/(m*K)], T en K.
+K_ACERO = 20.0            # Conductividad térmica del AISI 321 [W/(m*K)]
 
-    Ajuste lineal a los valores de catálogo del acero (unos 16 W/(m*K) a 100 C y
-    22 a 600 C). Los austeníticos conducen poco y además mejoran al calentarse,
-    al revés que la mayoría de los metales. En el rango de trabajo la chapa es
-    una resistencia pequeña frente a la convección interna, así que la linealidad
-    del ajuste sobra para lo que se le pide.
-
-    El límite de servicio continuo del AISI 321 está en torno a 1150 K: si la
-    pared se va por encima, el resultado deja de ser un diseño y pasa a ser un
-    aviso.
-    """
-    return 14.6 + 0.0127 * (T - pf.CERO_CELSIUS)
+# K_ACERO: constante a propósito, no función de T. El acero conduce entre 16
+# W/(m*K) a 100 C y 22 a 600, y la chapa del receptor se mueve, sobre todos los
+# casos de trabajo ensayados, entre 400 y 1080 K de temperatura media, o sea
+# entre 16 y 25 W/(m*K), con media 20.5. Se toma 20, que corresponde a unos 700
+# K de chapa, el centro del rango.
+#
+# Que el valor exacto dé igual no es una suposición, es una cuenta: la chapa es
+# el 2.7 % de la resistencia total al fluido (3.7e-5 frente a 1.3e-3 m2*K/W de
+# la película interna), así que un 20 % de error en k mueve la resistencia
+# total un 0.5 % y la temperatura de pared una décima de grado. Hacer k función
+# de T obligaba a resolver la resistencia DENTRO de la bisección de T_w, porque
+# la temperatura media de la chapa depende de la propia T_w que se busca; con k
+# constante la resistencia se calcula una vez por porción y sale del bucle.
+#
+# El límite de servicio continuo del AISI 321 está en torno a 1150 K: si la
+# pared se va por encima, el resultado deja de ser un diseño y pasa a ser un
+# aviso.
 
 
 def perdidas(T_w, A, h_ext=H_EXT, eps=EPSILON):
@@ -204,20 +213,20 @@ class Receptor:
             """Calor al fluido y pared, para una temperatura de salida de prueba."""
             T_f = 0.5 * (T_ent + T_sal)
             h_int = h_interno(T_f)[0]
-
-            def resistencia(T_w):
-                """Resistencia chapa + película interna, por unidad de área [m2*K/W]."""
-                return e / k_acero(0.5 * (T_w + T_f)) + 1.0 / h_int
+            # Resistencia chapa + película interna, por unidad de área [m2*K/W].
+            # Con K_ACERO constante no depende de T_w, así que se calcula aquí,
+            # una vez, en vez de en cada evaluación de la bisección de abajo.
+            resistencia = e / K_ACERO + 1.0 / h_int
 
             def balance_pared(T_w):
                 return (q_abs - perdidas(T_w, A, h_ext, eps)
-                        - A * (T_w - T_f) / resistencia(T_w))
+                        - A * (T_w - T_f) / resistencia)
 
             # La pared está entre el cielo (pierde más de lo que recibe) y la
             # temperatura a la que solo la radiación ya se lleva todo el flujo.
             T_w_max = max(T_f, (q_abs / (A * eps * SIGMA) + T_CIELO ** 4) ** 0.25) + 1.0
             T_w = _biseccion(balance_pared, T_CIELO, T_w_max)
-            return A * (T_w - T_f) / resistencia(T_w), T_w
+            return A * (T_w - T_f) / resistencia, T_w
 
         def desequilibrio(T_sal):
             q_fluido, _ = cerrar(T_sal)

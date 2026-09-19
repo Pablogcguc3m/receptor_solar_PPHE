@@ -77,7 +77,10 @@
 
   var LIMITE_AISI321 = 1150.0;  // Servicio continuo del AISI 321 [K]
 
-  function kAcero(T) { return 14.6 + 0.0127 * (T - CERO_CELSIUS); }
+  // Conductividad del AISI 321 [W/(m*K)]. Constante a proposito: la chapa es el
+  // 2.7 % de la resistencia al fluido, y 20 corresponde a unos 700 K de chapa,
+  // el centro del rango de trabajo. Ver la nota de receptor.py.
+  var K_ACERO = 20.0;
 
   function perdidas(T_w, A, h_ext, eps) {
     return (h_ext * (T_w - T_AMB) +
@@ -347,11 +350,12 @@
         var T_f = 0.5 * (T_ent + T_sal);
         var h_int = hInterno(T_f).h;
 
-        function resistencia(T_w) {
-          return e / kAcero(0.5 * (T_w + T_f)) + 1.0 / h_int;
-        }
+        // Con K_ACERO constante la resistencia ya no depende de T_w: se calcula
+        // aqui una vez, y no en cada evaluacion de la biseccion de abajo.
+        var resistencia = e / K_ACERO + 1.0 / h_int;
+
         function balancePared(T_w) {
-          return q_abs - perdidas(T_w, A, h_ext, eps) - A * (T_w - T_f) / resistencia(T_w);
+          return q_abs - perdidas(T_w, A, h_ext, eps) - A * (T_w - T_f) / resistencia;
         }
 
         // La pared esta entre el cielo (pierde mas de lo que recibe) y la
@@ -359,7 +363,7 @@
         var T_w_max = Math.max(
           T_f, Math.pow(q_abs / (A * eps * SIGMA) + Math.pow(T_CIELO, 4), 0.25)) + 1.0;
         var T_w = biseccion(balancePared, T_CIELO, T_w_max);
-        return { q: A * (T_w - T_f) / resistencia(T_w), T_w: T_w };
+        return { q: A * (T_w - T_f) / resistencia, T_w: T_w };
       }
 
       function desequilibrio(T_sal) {
@@ -451,7 +455,7 @@
     CERO_CELSIUS: CERO_CELSIUS, SIGMA: SIGMA, T_AMB: T_AMB, T_CIELO: T_CIELO,
     LIMITE_AISI321: LIMITE_AISI321, FWHM_POR_SIGMA: FWHM_POR_SIGMA,
     AIRE: AIRE, PANELES: PANELES, ErrorModelo: ErrorModelo,
-    propiedades: propiedades, entalpia: entalpia, kAcero: kAcero,
+    propiedades: propiedades, entalpia: entalpia, K_ACERO: K_ACERO,
     asignacionDeConstantes: asignacionDeConstantes,
     Mapa: Mapa, mapaDesdePotencia: mapaDesdePotencia,
     resolver: resolver
