@@ -125,6 +125,12 @@ h3{font-size:16px; line-height:1.35; letter-spacing:-.008em}
   pointer-events:none; z-index:0;
 }
 .portada > *{position:relative; z-index:1}
+/* El campo de brasas va por encima del resplandor y por debajo del texto, y no
+   intercepta el raton: el cursor lo lee la seccion entera, no el lienzo. */
+#brasas{
+  position:absolute; inset:0; width:100%; height:100%;
+  z-index:0; pointer-events:none; display:block;
+}
 .portada h1{max-width:19ch}
 .portada .entradilla{
   margin-top:16px; max-width:62ch; font-size:16.5px; line-height:1.6;
@@ -336,6 +342,7 @@ img{max-width:100%}
 <div class="envoltorio">
 
 <section class="portada">
+  <canvas id="brasas" aria-hidden="true"></canvas>
   <h1>La distribución de calor de un receptor solar</h1>
   <p class="entradilla">
     Una placa de acero recibe la mancha de un campo de helióstatos y la atraviesa
@@ -1089,6 +1096,189 @@ window.addEventListener('resize', function(){
 });
 var mq = window.matchMedia('(prefers-color-scheme: dark)');
 if (mq.addEventListener) mq.addEventListener('change', function(){ if (ultimo) pintar(ultimo); });
+})();
+
+/* ===========================================================================
+   Campo de brasas de la portada
+   ---------------------------------------------------------------------------
+   Lienzo 2D, sin librerias. Las particulas SUBEN, como el aire caliente que
+   atraviesa la placa, y el cursor hace de foco de calor: las aparta y las
+   pone al blanco al acercarse. La decoracion cuenta lo mismo que el modelo.
+
+   Va en su propio modulo y no toca nada del calculo. Las cuatro guardas que
+   lleva son lo que impide que un adorno se coma la herramienta:
+
+     1. Se detiene mientras se arrastra un deslizador, que es cuando el modelo
+        necesita los fotogramas para recalcular.
+     2. Se detiene cuando la portada sale de pantalla.
+     3. Se detiene cuando la pestana pasa a segundo plano.
+     4. Respeta prefers-reduced-motion: pinta un fotograma y se queda quieto.
+   =========================================================================== */
+(function(){
+'use strict';
+
+var lienzo = document.getElementById('brasas');
+if (!lienzo || !lienzo.getContext) return;
+var ctx = lienzo.getContext('2d');
+if (!ctx) return;
+var portada = lienzo.parentElement;
+var menosMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+var W = 0, H = 0, dpr = 1;
+var brasas = [];
+var raton = { x: 0, y: 0, activo: false };
+var enPantalla = true, pestanaVisible = true, arrastrando = false;
+var animacion = null;
+
+var ALCANCE = 135;      // radio de influencia del cursor [px]
+var EMPUJE  = 1100;     // intensidad del empujon
+
+function cuantas(){ return W < 700 ? 40 : (W < 1150 ? 75 : 115); }
+
+function nacer(dentro){
+  return {
+    x: Math.random() * W,
+    y: dentro ? Math.random() * H : H + Math.random() * 40,
+    r: 0.5 + Math.random() * 1.6,
+    vy: -(0.08 + Math.random() * 0.34),        // suben
+    deriva: (Math.random() - 0.5) * 0.10,
+    fase: Math.random() * 6.2832,
+    vaiven: 0.10 + Math.random() * 0.30,
+    alfa: 0.20 + Math.random() * 0.55,
+    calor: 0,                                  // 0 naranja brasa, 1 blanco
+    ex: 0, ey: 0                               // desvio que impone el cursor
+  };
+}
+
+function medir(){
+  var caja = portada.getBoundingClientRect();
+  W = Math.max(1, Math.round(caja.width));
+  H = Math.max(1, Math.round(caja.height));
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  lienzo.width  = Math.round(W * dpr);
+  lienzo.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  var n = cuantas();
+  while (brasas.length < n) brasas.push(nacer(true));
+  brasas.length = n;
+}
+
+function pintar(){
+  ctx.clearRect(0, 0, W, H);
+  ctx.globalCompositeOperation = 'lighter';   // el solape hace el rescoldo
+  for (var i = 0; i < brasas.length; i++){
+    var b = brasas[i];
+    var g  = Math.round(150 + 95 * b.calor);
+    var az = Math.round(65 + 165 * b.calor);
+    var a  = b.alfa * (0.55 + 0.45 * b.calor);
+    ctx.fillStyle = 'rgba(255,' + g + ',' + az + ',' + a.toFixed(3) + ')';
+    ctx.beginPath();
+    ctx.arc(b.x + b.ex, b.y + b.ey, b.r * (1 + 0.5 * b.calor), 0, 6.2832);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function avanzar(){
+  for (var i = 0; i < brasas.length; i++){
+    var b = brasas[i];
+    b.y += b.vy;
+    b.fase += 0.01;
+    b.x += b.deriva + Math.sin(b.fase) * b.vaiven * 0.25;
+
+    var objetivo = 0;
+    if (raton.activo){
+      var dx = (b.x + b.ex) - raton.x;
+      var dy = (b.y + b.ey) - raton.y;
+      var d2 = dx * dx + dy * dy;
+      if (d2 < ALCANCE * ALCANCE){
+        var d = Math.sqrt(d2) || 0.001;
+        var cerca = 1 - d / ALCANCE;           // 0 en el borde, 1 encima
+        var f = EMPUJE * cerca * cerca / (d * 60);
+        b.ex += (dx / d) * f;
+        b.ey += (dy / d) * f;
+        objetivo = cerca;
+      }
+    }
+    b.calor += (objetivo - b.calor) * 0.08;    // calienta y enfria con inercia
+    b.ex *= 0.94;                              // y vuelve a su sitio
+    b.ey *= 0.94;
+
+    if (b.y < -10 || b.x < -30 || b.x > W + 30) brasas[i] = nacer(false);
+  }
+  pintar();
+}
+
+function puedeCorrer(){
+  return enPantalla && pestanaVisible && !arrastrando && !menosMovimiento.matches;
+}
+function marco(){
+  if (!puedeCorrer()){ animacion = null; return; }
+  avanzar();
+  animacion = requestAnimationFrame(marco);
+}
+function arrancar(){
+  if (animacion === null && puedeCorrer()) animacion = requestAnimationFrame(marco);
+}
+function parar(){
+  if (animacion !== null){ cancelAnimationFrame(animacion); animacion = null; }
+}
+
+// -- El cursor -------------------------------------------------------------
+portada.addEventListener('pointermove', function(e){
+  var caja = portada.getBoundingClientRect();
+  raton.x = e.clientX - caja.left;
+  raton.y = e.clientY - caja.top;
+  raton.activo = true;
+  arrancar();
+}, { passive: true });
+portada.addEventListener('pointerleave', function(){ raton.activo = false; }, { passive: true });
+
+// -- Guarda 1: el modelo tiene prioridad mientras se arrastra --------------
+document.addEventListener('pointerdown', function(e){
+  if (e.target.closest && e.target.closest('input[type=range]')){
+    arrastrando = true; parar();
+  }
+}, { passive: true });
+['pointerup','pointercancel'].forEach(function(ev){
+  window.addEventListener(ev, function(){
+    if (arrastrando){ arrastrando = false; arrancar(); }
+  }, { passive: true });
+});
+
+// -- Guarda 2: fuera de pantalla, quieto -----------------------------------
+if ('IntersectionObserver' in window){
+  new IntersectionObserver(function(entradas){
+    enPantalla = entradas[0].isIntersecting;
+    if (enPantalla) arrancar(); else parar();
+  }, { threshold: 0 }).observe(portada);
+}
+
+// -- Guarda 3: pestana en segundo plano ------------------------------------
+document.addEventListener('visibilitychange', function(){
+  pestanaVisible = !document.hidden;
+  if (pestanaVisible) arrancar(); else parar();
+});
+
+// -- Guarda 4: quien pide menos movimiento, no lo tiene --------------------
+function atenderPreferencia(){
+  if (menosMovimiento.matches){ parar(); medir(); pintar(); }
+  else arrancar();
+}
+if (menosMovimiento.addEventListener) menosMovimiento.addEventListener('change', atenderPreferencia);
+
+var remedir;
+window.addEventListener('resize', function(){
+  clearTimeout(remedir);
+  remedir = setTimeout(function(){ medir(); pintar(); }, 150);
+});
+if ('ResizeObserver' in window){
+  new ResizeObserver(function(){ medir(); pintar(); }).observe(portada);
+}
+
+medir();
+pintar();          // un fotograma ya visible antes de animar nada
+atenderPreferencia();
 })();
 </script>
 </body>
