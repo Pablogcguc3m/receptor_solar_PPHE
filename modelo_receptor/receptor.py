@@ -73,7 +73,14 @@ geom = _importar("th_geometria", _TH / "geometria.py")
 
 SIGMA = 5.670374419e-8    # Constante de Stefan-Boltzmann [W/(m2*K4)]
 T_AMB = 298.15            # Temperatura ambiente [K]
-T_CIELO = 284.0           # Temperatura equivalente del cielo [K], Swinbank: 0.0552*T_amb**1.5
+T_ENTORNO = 303.15        # Temperatura del entorno próximo, 30 C [K]
+PESO_ENTORNO = 0.895      # Peso del entorno próximo en el sumidero radiante [-]
+PESO_CIELO = 0.955        # Peso del cielo [-]
+
+# Ecuación (6) paper M.R. Rodríguez
+T_CIELO = ((PESO_ENTORNO * T_ENTORNO ** 4 + PESO_CIELO * T_AMB ** 4)
+           / (PESO_ENTORNO + PESO_CIELO)) ** 0.25
+
 H_EXT = 20.0              # Coef. de convección exterior [W/(m2*K)]. Ver nota
 EPSILON = 0.85            # Emisividad de la cara expuesta [-]
 ABSORTIVIDAD = 1.0        # Fracción del flujo incidente que se absorbe [-]. Ver nota
@@ -352,7 +359,7 @@ if __name__ == "__main__":
     receptor = Receptor(
         mapa=mp.MapaGaussiano.desde_pico(L=1.5, W=1.0, q_pico=200e3,
                                          sigma_x=1 / 3, sigma_y=0.5),
-        G=0.35,                          # kg/s de aire
+        G=0.6,                          # kg/s de aire
         T_ent=pf.CERO_CELSIUS + 300,     # 300 C a la entrada, uniforme
         p=10e5,                          # 10 bar: a presión atmosférica este
                                          # gasto pediría 300 m/s en el canal
