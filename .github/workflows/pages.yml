@@ -1,0 +1,50 @@
+# Publica web/ en GitHub Pages.
+#
+# Se usa un flujo de trabajo en vez de la opcion "servir desde una carpeta"
+# porque esa solo admite la raiz del repo o docs/, y habria obligado a
+# renombrar web/ y a dejar desactualizadas las referencias de los informes.
+#
+# No hay compilacion: la pagina es HTML, CSS y JavaScript sin dependencias, y
+# el flujo se limita a empaquetar la carpeta y entregarsela a Pages.
+
+name: Publicar la pagina
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:          # Para poder relanzarlo a mano desde la pestana Actions
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Si se empujan dos cambios seguidos, que gane el ultimo y no se pisen.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.despliegue.outputs.page_url }}
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Pages
+        uses: actions/configure-pages@v5
+
+      - name: Empaquetar la carpeta web/
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+      - name: Desplegar
+        id: despliegue
+        uses: actions/deploy-pages@v4

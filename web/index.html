@@ -1,3 +1,17 @@
+<!DOCTYPE html>
+<!--
+  Pagina interactiva del modelo nodal del receptor. Documento HTML completo y
+  autonomo: se sirve tal cual desde GitHub Pages, sin build ni servidor.
+
+  El envoltorio (doctype, html, head, body, charset, viewport) y las reglas de
+  reset que hay al final de la hoja de estilos NO son decorativos: la version
+  publicada como artefacto en claude.ai los recibia de la plataforma, y sin
+  ellos la pagina sale en quirks mode, con los acentos rotos y sin responsive.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Receptor solar PPHE</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -240,7 +254,24 @@ select{
 .hip code{font-family:var(--mono); font-size:11.5px; color:var(--accent)}
 .pie-fuente{margin-top:20px; padding-top:14px; border-top:1px solid var(--linea); font-size:11.5px; color:var(--muted); font-family:var(--mono)}
 @media (prefers-reduced-motion:reduce){ *{transition:none!important} }
+
+/* --------------------------------------------------------------- reset --- */
+/* Lo que ponia la plataforma de artefactos y aqui hay que poner a mano. */
+:root{
+  color-scheme:light;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){ color-scheme:dark } }
+:root[data-theme="dark"]{ color-scheme:dark }
+img{max-width:100%}
+/* Imprescindible: los deslizadores de pico y potencia se ocultan con la
+   propiedad .hidden, y .mando lleva display:block, que gana al display:none
+   por defecto del navegador si no se fuerza aqui. */
+[hidden]{display:none!important}
 </style>
+</head>
+<body>
 
 <header class="cabecera">
   <div class="cabecera-int">
@@ -998,3 +1029,5 @@ var mq = window.matchMedia('(prefers-color-scheme: dark)');
 if (mq.addEventListener) mq.addEventListener('change', function(){ if (ultimo) pintar(ultimo); });
 })();
 </script>
+</body>
+</html>
