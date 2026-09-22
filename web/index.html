@@ -562,7 +562,7 @@ img{max-width:100%}
           <div class="cbar-pies"><span id="cbmin-flujo"></span><span id="cbmax-flujo"></span></div>
         </figure>
         <figure class="mapa">
-          <figcaption><h3>Temperatura del aire</h3><p class="sub">T salida de cada porción [°C]</p></figcaption>
+          <figcaption><h3>Temperatura del aire</h3><p class="sub">T salida de cada porción [°C] · soldaduras en negro</p></figcaption>
           <div class="lienzo" id="l-fluido">
             <canvas class="campo" id="c-fluido"></canvas><canvas class="capa" id="o-fluido"></canvas>
             <div class="globo" id="g-fluido"></div>
@@ -897,7 +897,7 @@ function nodoMasCaliente(r){
 /* ---------------------------------------------------------- mapas ------- */
 var MAPAS = [
   { id:'flujo',  datos:function(r){ return r.flujo; },   esc:1e-3 },
-  { id:'fluido', datos:function(r){ return r.T_fluido; }, esc:1, off:-C },
+  { id:'fluido', datos:function(r){ return r.T_fluido; }, esc:1, off:-C, soldaduras:true },
   { id:'pared',  datos:function(r){ return r.T_pared; },  esc:1, off:-C, limite:true }
 ];
 
@@ -957,6 +957,7 @@ function pintarMapa(spec, r){
       o.stroke();
     }
   }
+  if (spec.soldaduras) pintarSoldaduras(o, r, ancho, alto);
   if (sel){
     var s = rect(sel.i, sel.j);
     o.strokeStyle = '#ffffff'; o.lineWidth = 2.5;
@@ -975,6 +976,33 @@ function pintarMapa(spec, r){
   $('cbmin-' + spec.id).textContent = n(mn, dec);
   $('cbmax-' + spec.id).textContent = n(mx, dec) + (spec.id === 'flujo' ? ' kW/m²' : ' °C');
   $('e-' + spec.id).textContent = 'x = ' + n(r.mapa.W, 2) + ' m';
+}
+
+// Donde no hay aire: los puntos de soldadura, a escala y al tresbolillo, y las
+// dos soldaduras de borde. Un punto por porción: en las filas pares en el
+// centro de cada celda y en las impares desplazado media celda, sobre las
+// fronteras entre columnas. El modelo solo usa la fracción de área, así que
+// dónde cae cada punto dentro de su celda es cosa del dibujo.
+function pintarSoldaduras(o, r, ancho, alto){
+  var ex = ancho / r.mapa.W, ey = alto / r.mapa.L;      // px por metro
+  var M = r.M, N = r.N, i, j;
+  o.fillStyle = '#000000';
+  var borde = r.panel.w_e * ex;
+  o.fillRect(0, 0, borde, alto);
+  o.fillRect(ancho - borde, 0, borde, alto);
+  // A escala real salen de 1-2 px con la placa de 1,5 m: un mínimo para que se vean
+  var rx = Math.max(r.panel.d_sp / 2 * ex, 0.9), ry = Math.max(r.panel.d_sp / 2 * ey, 0.9);
+  o.beginPath();
+  for (j = 0; j < N; j++){
+    var y = alto - (j + 0.5) * r.dy * ey;
+    var impar = j % 2 === 1;
+    for (i = 0; i < (impar ? M - 1 : M); i++){
+      var x = (i + (impar ? 1 : 0.5)) * r.dx * ex;
+      o.moveTo(x + rx, y);
+      o.ellipse(x, y, rx, ry, 0, 0, 2 * Math.PI);
+    }
+  }
+  o.fill();
 }
 
 function celdaDesdeEvento(ev, r){
