@@ -40,6 +40,14 @@ jobs:
       - name: Preparar Pages
         uses: actions/configure-pages@v5
 
+      # Pages deja que el navegador guarde cada fichero 10 minutos, y tras un
+      # cambio podia quedarse con el index.html nuevo y el fisica.js viejo, que
+      # ya no hablan el mismo idioma. Con el commit en la URL, cada index.html
+      # pide el fisica.js de su propia version. En local se sigue abriendo tal
+      # cual, sin el parametro.
+      - name: Versionar fisica.js
+        run: sed -i "s|src=\"fisica.js\"|src=\"fisica.js?v=${GITHUB_SHA::7}\"|" web/index.html && grep -q "fisica.js?v=" web/index.html
+
       - name: Empaquetar la carpeta web/
         uses: actions/upload-pages-artifact@v3
         with:

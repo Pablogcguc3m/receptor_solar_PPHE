@@ -13,6 +13,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Receptor solar PPHE</title>
+<link rel="icon" type="image/svg+xml" href="icono.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
@@ -203,6 +204,7 @@ select{
   background:var(--surface-2); border:1px solid var(--linea);
   border-radius:8px; padding:9px 10px;
 }
+.segmentado button:disabled{opacity:.35; cursor:not-allowed}
 .nota-panel{display:block; margin-top:8px; font-size:11.5px; color:var(--muted)}
 
 /* --------------------------------------------------------------- avisos -- */
@@ -467,6 +469,25 @@ img{max-width:100%}
         <div class="nota-panel" id="nota-panel"></div>
       </div>
       <div class="mando">
+        <div class="mando-cab"><span class="mando-nom">Celda de soldaduras</span></div>
+        <div class="segmentado" id="familia" role="group" aria-label="Familia de celda de M. Piper">
+          <button data-familia="longitudinal" aria-pressed="true">Longitudinal</button>
+          <button data-familia="cuadrada" aria-pressed="false">Cuadrada</button>
+          <button data-familia="transversal" aria-pressed="false">Transversal</button>
+        </div>
+      </div>
+      <label class="mando">
+        <span class="mando-cab"><span class="mando-nom"><i>s</i><sub>T</sub>, paso transversal</span>
+          <output class="mando-val" for="s_t"></output></span>
+        <input type="range" id="s_t" min="51.5" max="72" step="0.1" value="72">
+      </label>
+      <label class="mando">
+        <span class="mando-cab"><span class="mando-nom"><i>s</i><sub>L</sub>, paso longitudinal</span>
+          <output class="mando-val" for="s_l"></output></span>
+        <input type="range" id="s_l" min="20.55" max="21.2" step="0.05" value="21">
+        <span class="nota-panel" id="nota-celda"></span>
+      </label>
+      <div class="mando">
         <div class="mando-cab"><span class="mando-nom">Escala de color</span></div>
         <div class="segmentado" id="cmap" role="group" aria-label="Escala de color de los mapas">
           <button data-cmap="hot" aria-pressed="true">hot</button>
@@ -521,6 +542,7 @@ img{max-width:100%}
         <div class="dato"><span class="k">Re</span><span class="v"><span id="d-re">–</span></span></div>
         <div class="dato"><span class="k">h interno</span><span class="v"><span id="d-h">–</span> <span class="u">W/m²K</span></span></div>
         <div class="dato"><span class="k">Malla</span><span class="v"><span id="d-malla">–</span></span></div>
+        <div class="dato"><span class="k">Celda</span><span class="v"><span id="d-celda">–</span></span></div>
         <div class="dato"><span class="k">Soldaduras</span><span class="v"><span id="d-sold">–</span> <span class="u">% del área</span></span></div>
         <div class="dato"><span class="k">Δp fricción</span><span class="v"><span id="d-dpf">–</span> <span class="u">kPa</span></span></div>
         <div class="dato"><span class="k">Δp distribución</span><span class="v"><span id="d-dpd">–</span> <span class="u">kPa</span></span></div>
@@ -685,27 +707,79 @@ function gradienteCss(fn){
 /* ---------------------------------------------------------- estado ------ */
 var PRESETS = {
   referencia: { modo:'pico', q_pico:200, Q:236, sigma_x:0.5, sigma_y:0.5, L:1.5, W:1.5,
-                lam:RCP.LAMBDA, G:0.9, T_ent:300, p:10, h_ext:20, eps:0.85, alfa:1, panel:'PPHE1' },
+                lam:RCP.LAMBDA, G:0.9, T_ent:300, p:10, h_ext:20, eps:0.85, alfa:1, panel:'PPHE1',
+                familia:'longitudinal', s_t:72, s_l:21 },
   pico:       { modo:'pico', q_pico:400, Q:472, sigma_x:0.5, sigma_y:0.5, L:1.5, W:1.5,
-                lam:RCP.LAMBDA, G:0.9, T_ent:300, p:10, h_ext:20, eps:0.85, alfa:1, panel:'PPHE1' },
+                lam:RCP.LAMBDA, G:0.9, T_ent:300, p:10, h_ext:20, eps:0.85, alfa:1, panel:'PPHE1',
+                familia:'longitudinal', s_t:72, s_l:21 },
   ancha:      { modo:'pico', q_pico:200, Q:396, sigma_x:1.2, sigma_y:1.2, L:1.5, W:1.5,
-                lam:RCP.LAMBDA, G:0.9, T_ent:300, p:10, h_ext:20, eps:0.85, alfa:1, panel:'PPHE1' }
+                lam:RCP.LAMBDA, G:0.9, T_ent:300, p:10, h_ext:20, eps:0.85, alfa:1, panel:'PPHE1',
+                familia:'longitudinal', s_t:72, s_l:21 }
 };
 var est = Object.assign({}, PRESETS.referencia);
 var cmap = 'hot';
 var sel = null;             // {i, j} porción seleccionada
 var ultimo = null;          // último resultado válido
 
-var DESLIZ = ['q_pico','Q','sigma_x','sigma_y','L','W','lam','G','T_ent','p','h_ext','eps','alfa'];
+var DESLIZ = ['q_pico','Q','sigma_x','sigma_y','L','W','lam','G','T_ent','p','h_ext','eps','alfa','s_t','s_l'];
 var UNIDAD = {
   q_pico:['kW/m²',0], Q:['kW',0], sigma_x:['m',2], sigma_y:['m',2], L:['m',2], W:['m',2],
   lam:['',2], G:['kg/s',2], T_ent:['°C',0], p:['bar',1],
-  h_ext:['W/m²K',0], eps:['',2], alfa:['',2]
+  h_ext:['W/m²K',0], eps:['',2], alfa:['',2], s_t:['mm',1], s_l:['mm',2]
 };
 var $ = function(id){ return document.getElementById(id); };
 
+/* ---------------------------------------------------------- celda ------- */
+// Piper no da rangos de s_T y s_L sueltos sino de dsp/sT, b_i/sT y s2L/sT, y
+// d_sp y b_i los fija el panel. Así que el panel y la familia acotan s_T, y s_T
+// acota s_L. Todo en mm, redondeado hacia dentro al paso de cada deslizador.
+function dentroPaso(v, paso, arriba){
+  var k = v / paso;
+  // toFixed quita el ruido de coma flotante (14.700000000000001), que corría la
+  // rejilla del deslizador y le impedía llegar a su máximo
+  return +((arriba ? Math.floor(k + 1e-9) : Math.ceil(k - 1e-9)) * paso).toFixed(2);
+}
+function rangosCelda(panelId, familia, s_t){
+  var g = RCP.rangoGeometria(RCP.PANELES[panelId], familia);
+  if (!g) return null;
+  var sT = [dentroPaso(g.sT[0] * 1e3, 0.1, false), dentroPaso(g.sT[1] * 1e3, 0.1, true)];
+  if (sT[0] > sT[1]) return null;
+  var t = Math.min(Math.max(s_t, sT[0]), sT[1]);
+  var sL = [dentroPaso(g.razon[0] * t / 2, 0.05, false), dentroPaso(g.razon[1] * t / 2, 0.05, true)];
+  return { sT: sT, sL: sL, razon: g.razon };
+}
+function acotar(v, r){ return Math.min(Math.max(v, r[0]), r[1]); }
+// Lleva s_T y s_L dentro de la celda elegida conservando, si se puede, la
+// relación s_L/s_T que ya había.
+function ajustarCelda(){
+  var relacion = est.s_l / est.s_t;
+  var r = rangosCelda(est.panel, est.familia, est.s_t);
+  est.s_t = +acotar(est.s_t, r.sT).toFixed(1);
+  r = rangosCelda(est.panel, est.familia, est.s_t);
+  est.s_l = +acotar(dentroPaso(relacion * est.s_t, 0.05, false), r.sL).toFixed(2);
+}
+// Al cambiar de panel se parte de sus propios pasos, los de la Tabla 1.
+function celdaDelPanel(){
+  var pa = RCP.PANELES[est.panel];
+  est.familia = RCP.asignacionDeConstantes(pa.s_t, pa.s_2l, pa.d_sp, pa.b_i).id;
+  est.s_t = +(pa.s_t * 1e3).toFixed(1);
+  est.s_l = +(pa.s_2l * 1e3 / 2).toFixed(2);
+}
+
 /* ---------------------------------------------------------- mandos ------ */
 function pintarMandos(){
+  // Los extremos de s_T y s_L van ANTES que los valores: un input range recorta
+  // el valor a su min/max en cuanto se lo asigna.
+  var rc = rangosCelda(est.panel, est.familia, est.s_t);
+  $('s_t').min = rc.sT[0]; $('s_t').max = rc.sT[1];
+  $('s_l').min = rc.sL[0]; $('s_l').max = rc.sL[1];
+  $('nota-celda').textContent = 'Piper: s₂L/s_T entre ' + n(rc.razon[0], 2) + ' y ' +
+    n(rc.razon[1], 2) + ' · s_T de ' + n(rc.sT[0], 1) + ' a ' + n(rc.sT[1], 1) + ' mm con este panel';
+  Array.prototype.forEach.call($('familia').children, function(b){
+    b.disabled = !rangosCelda(est.panel, b.dataset.familia, est.s_t);
+    b.setAttribute('aria-pressed', String(b.dataset.familia === est.familia));
+    b.title = b.disabled ? 'La correlación de Piper no cubre esta celda con el b_i de este panel' : '';
+  });
   DESLIZ.forEach(function(k){
     var inp = $(k);
     if (document.activeElement !== inp) inp.value = est[k];
@@ -720,10 +794,10 @@ function pintarMandos(){
   });
   $('panel').value = est.panel;
   var pa = RCP.PANELES[est.panel];
-  $('nota-panel').textContent = 'chapa ' + n(pa.delta_pp * 1e3, 1) + ' mm · s_T ' +
-    n(pa.s_t * 1e3, 0) + ' mm · 2s_L ' + n(pa.s_2l * 1e3, 0) + ' mm';
-  // La malla no se elige: sale del patrón de soldaduras del panel
-  var Mm = Math.max(Math.round(est.W / pa.s_t), 1), Nm = Math.max(Math.round(est.L / (pa.s_2l / 2)), 1);
+  $('nota-panel').textContent = 'chapa ' + n(pa.delta_pp * 1e3, 1) + ' mm · b_i ' +
+    n(pa.b_i * 1e3, 1) + ' mm · d_sp ' + n(pa.d_sp * 1e3, 1) + ' mm';
+  // La malla no se elige: sale del patrón de soldaduras
+  var Mm = Math.max(Math.round(est.W / (est.s_t / 1e3)), 1), Nm = Math.max(Math.round(est.L / (est.s_l / 1e3)), 1);
   $('nota-malla').textContent = 'Malla ' + Mm + ' × ' + Nm + ' porciones, una por celda de soldadura (' +
     n(est.W / Mm * 1e3, 1) + ' × ' + n(est.L / Nm * 1e3, 1) + ' mm)';
   Array.prototype.forEach.call($('cmap').children, function(b){
@@ -733,7 +807,9 @@ function pintarMandos(){
 
 DESLIZ.forEach(function(k){
   $(k).addEventListener('input', function(){
+    var relacion = est.s_l / est.s_t;
     est[k] = parseFloat(this.value);
+    if (k === 's_t'){ est.s_l = relacion * est.s_t; ajustarCelda(); }
     marcarPreset(null);
     pintarMandos();
     calcular();
@@ -748,7 +824,18 @@ $('cmap').addEventListener('click', function(e){
   cmap = b.dataset.cmap; pintarMandos(); if (ultimo) pintar(ultimo);
 });
 $('panel').addEventListener('change', function(){
-  est.panel = this.value; marcarPreset(null); pintarMandos(); calcular();
+  est.panel = this.value; celdaDelPanel(); marcarPreset(null); pintarMandos(); calcular();
+});
+$('familia').addEventListener('click', function(e){
+  var b = e.target.closest('button'); if (!b || b.disabled) return;
+  if (b.dataset.familia === est.familia) return;
+  est.familia = b.dataset.familia;
+  // Al cambiar de familia, s_T al centro de su rango y s_L a la relación central
+  var r = rangosCelda(est.panel, est.familia, est.s_t);
+  est.s_t = +dentroPaso((r.sT[0] + r.sT[1]) / 2, 0.1, false).toFixed(1);
+  r = rangosCelda(est.panel, est.familia, est.s_t);
+  est.s_l = +dentroPaso((r.sL[0] + r.sL[1]) / 2, 0.05, false).toFixed(2);
+  marcarPreset(null); pintarMandos(); calcular();
 });
 $('presets').addEventListener('click', function(e){
   var b = e.target.closest('button'); if (!b) return;
@@ -773,6 +860,7 @@ function calcular(){
       sigma_x: est.sigma_x, sigma_y: est.sigma_y,
       G: est.G, T_ent: est.T_ent + C, p: est.p * 1e5,
       lam: est.lam, panel: est.panel,
+      s_t: est.s_t / 1000, s_2l: 2 * est.s_l / 1000,
       h_ext: est.h_ext, eps: est.eps, alfa: est.alfa
     };
     var r;
@@ -1071,6 +1159,7 @@ function pintar(r){
   $('d-re').textContent = nexp(r.Re);
   $('d-h').textContent = n(r.h_int, 0);
   $('d-malla').textContent = r.M + ' × ' + r.N;
+  $('d-celda').textContent = r.n.familia.replace('celda ', '');
   $('d-sold').textContent = n(r.fracSoldadura * 100, 2);
   $('d-dpf').textContent = n(r.dpFriccion / 1e3, 1);
   $('d-dpd').textContent = n(r.dpDistribucion / 1e3, 1);

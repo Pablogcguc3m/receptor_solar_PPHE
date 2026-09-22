@@ -163,28 +163,64 @@
   // Constantes de las leyes de potencia (asignacion.py, tablas de M. Piper)
   // ===========================================================================
 
+  // Las tres familias de celda y sus rangos de validez, tal y como los dan las
+  // tablas 2 y 3 de M. Piper: a = s2L/sT, b = dsp/sT, c = b_i/sT.
+  var FAMILIAS = [
+    { id: 'longitudinal', nombre: 'celda longitudinal',
+      a: [0.57, 0.59], b: [0.10, 0.14], c: [0.042, 0.083],
+      constantes: function (b, c) {
+        return { n1: 8.74 * b + (17 * c + 0.73), n2: -0.38,
+                 n3: 0.0775 * b + (0.38 * c + 0.005), n4: 0.75, n5: 0.4 };
+      } },
+    { id: 'cuadrada', nombre: 'celda cuadrada',
+      a: [0.99, 1.01], b: [0.17, 0.24], c: [0.071, 0.143],
+      constantes: function (b, c) {
+        return { n1: -15.3 * b + (1.4 * c + 5.4), n2: 1.725 * b + (1.11 * c - 0.66),
+                 n3: 0.03 * b + (0.76 * c - 0.032), n4: -1.12 * c + 0.905, n5: 0.4 };
+      } },
+    { id: 'transversal', nombre: 'celda transversal',
+      a: [1.70, 1.72], b: [0.17, 0.24], c: [0.071, 0.170],
+      constantes: function (b, c) {
+        return { n1: 1.35 * b + (2.8 * c + 0.92), n2: 0.3 * b + (0.53 * c - 0.29),
+                 n3: -0.163 * b + (0.711 * c + 0.022), n4: 0.29 * b + (-c + 0.8), n5: 0.4 };
+      } }
+  ];
+
+  // Tolerancia relativa en los bordes de los rangos. Los pasos que elige la
+  // pagina caen a veces justo en un borde (s_T = 72 mm da dsp/sT = 0.10), y el
+  // redondeo de la division no puede dejarlos fuera por 1e-17.
+  function dentro(v, r) { return v >= r[0] * (1 - 1e-9) && v <= r[1] * (1 + 1e-9); }
+
   function asignacionDeConstantes(sT, s2L, dsp, h) {
     var a = s2L / sT, b = dsp / sT, c = h / sT;
-    if (a >= 0.57 && a <= 0.59 && b >= 0.10 && b <= 0.14 && c >= 0.042 && c <= 0.083) {
-      return { familia: 'celda longitudinal',
-               n1: 8.74 * b + (17 * c + 0.73), n2: -0.38,
-               n3: 0.0775 * b + (0.38 * c + 0.005), n4: 0.75, n5: 0.4 };
-    }
-    if (a >= 0.99 && a <= 1.01 && b >= 0.17 && b <= 0.24 && c >= 0.071 && c <= 0.143) {
-      return { familia: 'celda cuadrada',
-               n1: -15.3 * b + (1.4 * c + 5.4), n2: 1.725 * b + (1.11 * c - 0.66),
-               n3: 0.03 * b + (0.76 * c - 0.032), n4: -1.12 * c + 0.905, n5: 0.4 };
-    }
-    if (a >= 1.70 && a <= 1.72 && b >= 0.17 && b <= 0.24 && c >= 0.071 && c <= 0.170) {
-      return { familia: 'celda transversal',
-               n1: 1.35 * b + (2.8 * c + 0.92), n2: 0.3 * b + (0.53 * c - 0.29),
-               n3: -0.163 * b + (0.711 * c + 0.022), n4: 0.29 * b + (-c + 0.8), n5: 0.4 };
+    for (var k = 0; k < FAMILIAS.length; k++) {
+      var f = FAMILIAS[k];
+      if (dentro(a, f.a) && dentro(b, f.b) && dentro(c, f.c)) {
+        var n = f.constantes(b, c);
+        n.familia = f.nombre;
+        n.id = f.id;
+        return n;
+      }
     }
     throw new ErrorModelo(
       'La geometria del panel queda fuera de las correlaciones publicadas ' +
       '(s2L/sT = ' + a.toFixed(3) + ', dsp/sT = ' + b.toFixed(3) +
       ', b_i/sT = ' + c.toFixed(3) + ').',
       'Elige otro panel de la Tabla 1.');
+  }
+
+  // Lo que la correlacion deja elegir con un panel y una familia dados. d_sp y
+  // b_i los fija el panel, asi que dsp/sT y b_i/sT acotan s_T, y s2L/sT acota
+  // luego s_L. Devuelve los extremos en metros, o null si ningun s_T cumple a la
+  // vez los dos rangos (PPHE3, con b_i = 7 mm, solo admite la transversal).
+  function rangoGeometria(panel, idFamilia) {
+    var f = null;
+    for (var k = 0; k < FAMILIAS.length; k++) if (FAMILIAS[k].id === idFamilia) f = FAMILIAS[k];
+    if (!f) return null;
+    var sT_min = Math.max(panel.d_sp / f.b[1], panel.b_i / f.c[1]);
+    var sT_max = Math.min(panel.d_sp / f.b[0], panel.b_i / f.c[0]);
+    if (sT_min > sT_max * (1 + 1e-9)) return null;
+    return { sT: [sT_min, sT_max], razon: f.a, familia: f };
   }
 
   // ===========================================================================
@@ -314,13 +350,16 @@
    *   p           [Pa]    presion a la entrada
    *   lam         [-]     mezcla entre columnas: 1 adiabaticas, 0 mezcla completa
    *   panel       id de PANELES
+   *   s_t, s_2l   [m]     pasos de soldadura, opcionales: sustituyen a los del panel
    *   h_ext, eps, alfa
    *
    * La malla no se elige: la dicta el patron de soldaduras del panel, una
    * porcion por celda s_T x s_L. M = W/s_T y N = L/s_L, redondeados.
    */
   function resolver(cfg) {
-    var panel = PANELES[cfg.panel] || PANELES.PPHE1;
+    var panel = Object.assign({}, PANELES[cfg.panel] || PANELES.PPHE1);
+    if (cfg.s_t) panel.s_t = cfg.s_t;
+    if (cfg.s_2l) panel.s_2l = cfg.s_2l;
     var fluido = AIRE;
 
     var mapa = cfg.modo === 'potencia'
@@ -569,6 +608,7 @@
     propiedades: propiedades, entalpia: entalpia, K_ACERO: K_ACERO, ZETA_DZ: ZETA_DZ,
     LAMBDA: 0.7,
     asignacionDeConstantes: asignacionDeConstantes,
+    FAMILIAS: FAMILIAS, rangoGeometria: rangoGeometria,
     Mapa: Mapa, mapaDesdePotencia: mapaDesdePotencia,
     resolver: resolver
   };
