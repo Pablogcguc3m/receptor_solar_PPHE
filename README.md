@@ -23,10 +23,13 @@ temperatura del aire y la de la pared sobre la placa, el perfil de salida en
 - **`mapa.py`**: flujo solar incidente `q''(x, y)` sobre la placa, repartido
   como una gaussiana. La potencia se integra sobre la placa con la función
   error, de modo que el reparto por nodos conserva la energía exactamente.
-- **`receptor.py`**: balance de energía porción a porción. Pérdidas por
-  convección y radiación, conducción por la chapa y convección interna con el
-  coeficiente del canal de pillow plate. Da el campo de temperaturas y el
-  perfil `T(x)` en `y = L`.
+- **`receptor.py`**: balance de energía porción a porción, con una porción por
+  celda del patrón de soldaduras. Pérdidas por convección y radiación,
+  conducción por la chapa y convección interna con el coeficiente del canal de
+  pillow plate, descontando el área de las soldaduras. La mezcla entre columnas
+  se regula con el factor `lambda`. Da el campo de temperaturas, el perfil
+  `T(x)` en `y = L`, la pérdida de carga y una tabla de rendimiento frente a la
+  temperatura de entrada.
 - **`documentacion_receptor.tex`**: documentación del módulo anterior.
 
 ### `modelo_termohidraulico/` — el canal de la pillow plate

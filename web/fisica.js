@@ -196,6 +196,12 @@
   function nusseltI(n3, n4, n5, Re, Pr) {                          // Ec. (20)
     return n3 * Math.pow(Re, n4) * Math.pow(Pr, n5);
   }
+  function friccionI(n1, Re, n2) { return n1 * Math.pow(Re, n2); }  // Ec. (18)
+  function fChI(b_i, w_pp, w_e) { return (b_i / Math.SQRT2) * (w_pp - 2 * w_e); }  // Ec. (16)
+
+  // Resistencia hidraulica local de las zonas de distribucion, ec. (19). En el
+  // receptor se reparte a medias entre la de entrada y la de salida.
+  var ZETA_DZ = 1.5;
 
   // ===========================================================================
   // Mapa gaussiano de flujo incidente (mapa.py)
@@ -305,10 +311,13 @@
    *   sigma_x, sigma_y    [m]
    *   G           [kg/s]  gasto masico total
    *   T_ent       [K]     temperatura de entrada, uniforme
-   *   p           [Pa]
-   *   N, M                porciones en altura y en anchura
+   *   p           [Pa]    presion a la entrada
+   *   lam         [-]     mezcla entre columnas: 1 adiabaticas, 0 mezcla completa
    *   panel       id de PANELES
    *   h_ext, eps, alfa
+   *
+   * La malla no se elige: la dicta el patron de soldaduras del panel, una
+   * porcion por celda s_T x s_L. M = W/s_T y N = L/s_L, redondeados.
    */
   function resolver(cfg) {
     var panel = PANELES[cfg.panel] || PANELES.PPHE1;
@@ -318,19 +327,44 @@
       ? mapaDesdePotencia(cfg.L, cfg.W, cfg.Q, cfg.sigma_x, cfg.sigma_y)
       : new Mapa(cfg.L, cfg.W, cfg.q_pico, cfg.sigma_x, cfg.sigma_y);
 
+    var lam = cfg.lam;
+    if (!(lam >= 0.0 && lam <= 1.0)) {
+      throw new ErrorModelo('lambda tiene que estar entre 0 y 1.', '');
+    }
+
+    // -- Malla dictada por el patron de soldaduras ---------------------------
+    var s_L = panel.s_2l / 2;
+    var M = Math.max(Math.round(mapa.W / panel.s_t), 1);
+    var N = Math.max(Math.round(mapa.L / s_L), 1);
+    var dx = mapa.W / M, dy = mapa.L / N;
+    if (dx <= panel.w_e || (M === 1 && mapa.W <= 2 * panel.w_e)) {
+      throw new ErrorModelo(
+        'Las soldaduras de borde (' + (panel.w_e * 1e3).toFixed(0) + ' mm) no caben ' +
+        'en una columna de ' + (dx * 1e3).toFixed(0) + ' mm.',
+        'Ensancha la placa.');
+    }
+    // Las columnas de los extremos pierden la soldadura de borde
+    var anchos = [], i, j;
+    for (i = 0; i < M; i++) anchos.push(dx);
+    anchos[0] -= panel.w_e;
+    anchos[M - 1] -= panel.w_e;
+    var sumaAnchos = 0.0;
+    for (i = 0; i < M; i++) sumaAnchos += anchos[i];
+    // Un punto de soldadura por celda s_T x s_L (tresbolillo)
+    var fracSoldadura = (Math.PI * panel.d_sp * panel.d_sp / 4) / (panel.s_t * s_L);
+
     var n = asignacionDeConstantes(panel.s_t, panel.s_2l, panel.d_sp, panel.b_i);
-    var seccion = panel.b_i / Math.SQRT2 * mapa.W;   // Ec. (16), sin soldaduras de borde
-    var de = deI(panel.b_i);                          // Ec. (14)
+    var seccion = fChI(panel.b_i, mapa.W, panel.w_e);  // Ec. (16), w_pp = W
+    var de = deI(panel.b_i);                            // Ec. (14)
     var e = panel.delta_pp;
     var h_ext = cfg.h_ext, eps = cfg.eps, alfa = cfg.alfa;
     var G = cfg.G, p = cfg.p, T_ent0 = cfg.T_ent;
-    var N = cfg.N, M = cfg.M;
 
     verificarT(fluido, T_ent0);
 
     // Coeficiente de pelicula del canal interno: ec. (3) -> Re, Pr -> Nu (20) -> h.
-    // No depende de M: el gasto de una columna y su seccion de paso son ambos
-    // proporcionales a dx, y el cociente se cancela.
+    // La velocidad es la misma en todas las columnas, porque el gasto se
+    // reparte en proporcion a la anchura de paso.
     function hInterno(T) {
       var pr = propiedades(fluido, T, p);
       var u = G / (pr.rho * seccion);
@@ -339,23 +373,37 @@
       return { h: Nu * pr.k / de, u: u, Re: Re, Pr: pr.Pr, Nu: Nu };
     }
 
-    var A = (mapa.W / M) * (mapa.L / N);
-    var G_col = G / M;
+    // Perdida de carga por friccion por unidad de longitud, a T y p [Pa/m].
+    // Primer termino de la ec. (19), con f de la ec. (18).
+    function friccion(T, pLocal) {
+      var pr = propiedades(fluido, T, pLocal);
+      var u = G / (pr.rho * seccion);
+      var Re = reynolds(pr.rho, u, de, pr.mu);
+      return friccionI(n.n1, Re, n.n2) / de * pr.rho * u * u / 2;
+    }
+
+    var A = dx * dy;
+    var G_col = [], A_f = [];
+    for (i = 0; i < M; i++) {
+      G_col.push(G * anchos[i] / sumaAnchos);
+      A_f.push(anchos[i] * dy * (1.0 - fracSoldadura));
+    }
 
     // -- Balance de una porcion ---------------------------------------------
-    function porcion(q_inc, T_ent) {
+    // A recibe el flujo y pierde calor; A_f, sin soldaduras, lo cede al fluido.
+    function porcion(q_inc, T_ent, Gc, Af) {
       var q_abs = alfa * q_inc;
 
       function cerrar(T_sal) {
         var T_f = 0.5 * (T_ent + T_sal);
         var h_int = hInterno(T_f).h;
 
-        // Con K_ACERO constante la resistencia ya no depende de T_w: se calcula
-        // aqui una vez, y no en cada evaluacion de la biseccion de abajo.
-        var resistencia = e / K_ACERO + 1.0 / h_int;
+        // Con K_ACERO constante la conductancia ya no depende de T_w: se
+        // calcula aqui una vez, y no en cada evaluacion de la biseccion.
+        var UA = Af / (e / K_ACERO + 1.0 / h_int);
 
         function balancePared(T_w) {
-          return q_abs - perdidas(T_w, A, h_ext, eps) - A * (T_w - T_f) / resistencia;
+          return q_abs - perdidas(T_w, A, h_ext, eps) - UA * (T_w - T_f);
         }
 
         // La pared esta entre el cielo (pierde mas de lo que recibe) y la
@@ -363,21 +411,21 @@
         var T_w_max = Math.max(
           T_f, Math.pow(q_abs / (A * eps * SIGMA) + Math.pow(T_CIELO, 4), 0.25)) + 1.0;
         var T_w = biseccion(balancePared, T_CIELO, T_w_max);
-        return { q: A * (T_w - T_f) / resistencia, T_w: T_w };
+        return { q: UA * (T_w - T_f), T_w: T_w };
       }
 
       function desequilibrio(T_sal) {
-        return cerrar(T_sal).q - G_col * (entalpia(fluido, T_sal) - entalpia(fluido, T_ent));
+        return cerrar(T_sal).q - Gc * (entalpia(fluido, T_sal) - entalpia(fluido, T_ent));
       }
 
       // Cota superior: todo el calor absorbido al fluido con el cp de la
       // entrada, que es el menor del tramo. Como el cp del aire crece con T, la
       // temperatura real queda por debajo.
-      var T_max = Math.min(T_ent + q_abs / (G_col * cpDe(fluido, T_ent)), fluido.T_max);
+      var T_max = Math.min(T_ent + q_abs / (Gc * cpDe(fluido, T_ent)), fluido.T_max);
       if (desequilibrio(T_max) > 0) {
         throw new ErrorModelo(
           'El aire se saldria de ' + (fluido.T_max - CERO_CELSIUS).toFixed(0) +
-          ' \u00b0C dentro de una porcion.',
+          ' °C dentro de una porcion.',
           'Sube el gasto G o baja el flujo incidente.');
       }
       var T_sal = biseccion(desequilibrio, fluido.T_min, T_max);
@@ -385,31 +433,88 @@
       return { T_sal: T_sal, T_w: fin.T_w, q: fin.q };
     }
 
-    // -- Recorrido de la placa, columna a columna y de abajo arriba ----------
-    var flujo = mapa.mapaNodal(M, N);
-    var T_fluido = [], T_pared = [], q_nodo = [], j, i;
-    for (j = 0; j < N; j++) {
-      T_fluido.push(new Array(M)); T_pared.push(new Array(M)); q_nodo.push(new Array(M));
+    // -- Mezcla entre columnas ----------------------------------------------
+    // Pondera en ENTALPIA el caso adiabatico y el de mezcla completa, para que
+    // la mezcla conserve la energia para cualquier lambda.
+    function mezclar(T_ad) {
+      var T_bajo = Math.min.apply(null, T_ad), T_alto = Math.max.apply(null, T_ad);
+      if (lam === 1.0 || T_alto - T_bajo < 1e-9) return T_ad.slice();
+      var h_ad = [], h_mez = 0.0, k;
+      for (k = 0; k < M; k++) {
+        h_ad.push(entalpia(fluido, T_ad[k]));
+        h_mez += G_col[k] * h_ad[k];
+      }
+      h_mez /= G;
+      var a = Math.max(T_bajo - 1.0, fluido.T_min), b = Math.min(T_alto + 1.0, fluido.T_max);
+      var salida = [];
+      for (k = 0; k < M; k++) {
+        var objetivo = lam * h_ad[k] + (1.0 - lam) * h_mez;
+        salida.push(biseccion(function (T) { return entalpia(fluido, T) - objetivo; },
+                              a, b, 1e-9));
+      }
+      return salida;
     }
 
+    // -- Recorrido de la placa, fila a fila y de abajo arriba ----------------
+    var flujo = mapa.mapaNodal(M, N);
+    var T_fluido = [], T_adiab = [], T_pared = [], q_nodo = [];
     var q_util = 0.0;
-    for (i = 0; i < M; i++) {
-      var T = T_ent0;
-      for (j = 0; j < N; j++) {
-        var r = porcion(flujo[j][i] * A, T);
-        T = r.T_sal;
-        T_fluido[j][i] = T;
-        T_pared[j][i] = r.T_w;
-        q_nodo[j][i] = r.q;
+    var T = [];
+    for (i = 0; i < M; i++) T.push(T_ent0);
+    for (j = 0; j < N; j++) {
+      var T_ad = new Array(M), T_w = new Array(M), qf = new Array(M);
+      for (i = 0; i < M; i++) {
+        var r = porcion(flujo[j][i] * A, T[i], G_col[i], A_f[i]);
+        T_ad[i] = r.T_sal; T_w[i] = r.T_w; qf[i] = r.q;
         q_util += r.q;
       }
+      T = mezclar(T_ad);
+      T_fluido.push(T); T_adiab.push(T_ad); T_pared.push(T_w); q_nodo.push(qf);
     }
+
+    // -- Perdida de carga, columna a columna y bajando la presion ------------
+    // El calculo termico no depende de la presion (Re = G''*de/mu), asi que se
+    // hace despues y aparte. Cada densidad se evalua a la presion local.
+    var G2 = Math.pow(G / seccion, 2);
+    var dpFriccion = [], dpDistribucion = [], dpAceleracion = [];
+    for (i = 0; i < M; i++) {
+      var Tc = T_ent0, pc = p;
+      var v = 1.0 / propiedades(fluido, Tc, pc).rho;
+      var fr = 0.0, ac = 0.0;
+      var di = ZETA_DZ / 2 * G2 * v;                 // Zona de distribucion de entrada
+      pc -= di;
+      for (j = 0; j < N; j++) {
+        var T_s = T_fluido[j][i];
+        var dpf = friccion(0.5 * (Tc + T_s), pc) * dy;
+        var v_s = 1.0 / propiedades(fluido, T_s, pc - dpf).rho;
+        var dpa = G2 * (v_s - v);
+        fr += dpf; ac += dpa;
+        pc -= dpf + dpa;
+        if (pc <= 0.0) {
+          throw new ErrorModelo(
+            'La perdida de carga agota los ' + (p / 1e5).toFixed(1) +
+            ' bar de entrada antes de la salida.',
+            'Sube la presion o baja el gasto.');
+        }
+        Tc = T_s; v = v_s;
+      }
+      di += ZETA_DZ / 2 * G2 * v;                    // Zona de distribucion de salida
+      dpFriccion.push(fr); dpDistribucion.push(di); dpAceleracion.push(ac);
+    }
+    function mediaGasto(valores) {
+      var s = 0.0;
+      for (var k = 0; k < M; k++) s += G_col[k] * valores[k];
+      return s / G;
+    }
+    var dpColumnas = [];
+    for (i = 0; i < M; i++) dpColumnas.push(dpFriccion[i] + dpDistribucion[i] + dpAceleracion[i]);
 
     // -- Resumen -------------------------------------------------------------
     var perfilSalida = T_fluido[N - 1];
-    var T_media_sal = 0.0;
-    for (i = 0; i < M; i++) T_media_sal += perfilSalida[i];
-    T_media_sal /= M;
+    // Temperatura de mezcla a la salida, por entalpia
+    var h_media = entalpia(fluido, T_ent0) + q_util / G;
+    var T_media_sal = biseccion(function (Tx) { return entalpia(fluido, Tx) - h_media; },
+                                fluido.T_min, fluido.T_max, 1e-9);
 
     var canal = hInterno(0.5 * (T_ent0 + T_media_sal));
 
@@ -428,9 +533,10 @@
     for (j = 0; j < N; j++) yCentros.push(mapa.L * (j + 0.5) / N);
 
     return {
-      mapa: mapa, panel: panel, n: n,
-      flujo: flujo, T_fluido: T_fluido, T_pared: T_pared, q_nodo: q_nodo,
-      A_celda: A, G_col: G_col, T_ent: T_ent0,
+      mapa: mapa, panel: panel, n: n, M: M, N: N, dx: dx, dy: dy, lam: lam,
+      flujo: flujo, T_fluido: T_fluido, T_adiabatica: T_adiab, T_pared: T_pared,
+      q_nodo: q_nodo,
+      A_celda: A, A_f: A_f, G_col: G_col, fracSoldadura: fracSoldadura, T_ent: T_ent0,
       perfilSalida: perfilSalida, xCentros: xCentros, yCentros: yCentros,
       Q_incidente: Q, q_util: q_util, perdidas: Q - q_util,
       rendimiento: q_util / Q,
@@ -444,6 +550,11 @@
       factorPico: mapa.factorPico(),
       u: canal.u, Re: canal.Re, h_int: canal.h, Pr: canal.Pr, Nu: canal.Nu,
       de: de, seccion: seccion,
+      dpColumnas: dpColumnas,
+      perdidaCarga: mediaGasto(dpColumnas),
+      dpFriccion: mediaGasto(dpFriccion),
+      dpDistribucion: mediaGasto(dpDistribucion),
+      dpAceleracion: mediaGasto(dpAceleracion),
       limiteSuperado: T_pared_max > LIMITE_AISI321
     };
   }
@@ -455,7 +566,8 @@
     CERO_CELSIUS: CERO_CELSIUS, SIGMA: SIGMA, T_AMB: T_AMB, T_CIELO: T_CIELO,
     LIMITE_AISI321: LIMITE_AISI321, FWHM_POR_SIGMA: FWHM_POR_SIGMA,
     AIRE: AIRE, PANELES: PANELES, ErrorModelo: ErrorModelo,
-    propiedades: propiedades, entalpia: entalpia, K_ACERO: K_ACERO,
+    propiedades: propiedades, entalpia: entalpia, K_ACERO: K_ACERO, ZETA_DZ: ZETA_DZ,
+    LAMBDA: 0.7,
     asignacionDeConstantes: asignacionDeConstantes,
     Mapa: Mapa, mapaDesdePotencia: mapaDesdePotencia,
     resolver: resolver

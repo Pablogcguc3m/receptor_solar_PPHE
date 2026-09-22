@@ -1,9 +1,14 @@
 """Balance de energía del receptor, porción a porción, y temperatura de salida.
 
-La placa L x W se parte en N filas (dy = L/N) y M columnas (dx = W/M). Cada
-columna es un canal independiente: el aire entra por abajo a T_ent uniforme,
-atraviesa las N porciones de su columna y sale por y = L. La salida de una
-porción es la entrada de la de encima. El resultado es el perfil T(x) en y = L.
+La placa L x W se parte en N filas y M columnas, y la malla la dicta el panel:
+cada porción es una celda del patrón de soldaduras, dx = s_T de ancho y dy = s_L
+de alto (s_L es la mitad del s_2l de la geometría). Por eso M = W/s_T y
+N = L/s_L, redondeados al entero más próximo; dx y dy se reajustan luego para
+cubrir la placa exacta. Con PPHE1 y la placa de 1.5 x 1.5 m salen 21 x 71.
+
+El aire entra por abajo a T_ent uniforme, sube fila a fila y sale por y = L. La
+salida de una fila es la entrada de la de encima. El resultado es el perfil
+T(x) en y = L.
 
 BALANCE DE UNA PORCIÓN. Sobre la cara exterior incide q''(x,y) del mapa
 gaussiano. De ahí, una parte se pierde al ambiente por convección y otra al
@@ -11,7 +16,7 @@ cielo por radiación, ambas gobernadas por la temperatura de la pared T_w; el
 resto atraviesa la chapa por conducción y pasa al fluido por convección interna:
 
     q_inc = h_ext*(T_w - T_amb)*A + eps*sigma*(T_w^4 - T_cielo^4)*A + q_fluido
-    q_fluido = A*(T_w - T_f)/(e/K_ACERO + 1/h_int)        [T_f = (T_ent+T_sal)/2]
+    q_fluido = A_f*(T_w - T_f)/(e/K_ACERO + 1/h_int)      [T_f = (T_ent+T_sal)/2]
     q_fluido = G_col*(h(T_sal) - h(T_ent))                [entalpías de props_fluido]
 
 Dos ecuaciones y dos incógnitas, T_w y T_sal, no lineales por el T_w^4 y porque
@@ -19,6 +24,53 @@ las propiedades del fluido dependen de la temperatura. Se resuelven por
 bisección anidada: para cada T_sal de prueba se despeja T_w, y con él el calor
 al fluido, hasta que cuadra con el salto de entalpía. La bisección se usa por
 robustez: nunca diverge, y el coste no importa con mallas de este tamaño.
+
+A y A_f NO SON LA MISMA ÁREA. La porción recibe flujo y pierde calor por toda su
+cara, A = dx*dy, pero solo cede calor al fluido por A_f, lo que queda de A al
+quitarle lo que no tiene aire detrás: el punto de soldadura de la celda y, en
+las dos columnas de los extremos, la soldadura de borde w_e. Se supone que la
+chapa está a la misma T_w en toda la porción, de modo que el calor que cae
+sobre la soldadura llega al fluido por conducción lateral a través de la chapa
+que la rodea; lo que se pierde es superficie de intercambio, no calor incidente.
+
+LA SECCIÓN DE PASO es la de la ec. (16) de O. Arsenyeva, f_ch = b_i/sqrt(2) *
+(W - 2*w_e), con el ancho de la placa en el papel del w_pp del panel. El gasto
+se reparte entre columnas en proporción a su anchura de paso: las interiores
+llevan dx y las dos de los extremos dx - w_e. Así la velocidad, u = G/(rho*f_ch)
+por la ec. (3), es la misma en todas las columnas a igual temperatura.
+
+MEZCLA ENTRE COLUMNAS, el factor LAMBDA. Cada fila se resuelve primero con las
+columnas adiabáticas entre sí, lo que da una entalpía de salida h_ad,i por
+columna. El caso opuesto, mezcla completa, es aquel en que toda la fila sale a
+la misma temperatura, la de la entalpía media ponderada por gasto h_mez. La
+salida real de la fila pondera los dos:
+
+    h_sal,i = LAMBDA*h_ad,i + (1 - LAMBDA)*h_mez
+
+con LAMBDA = 1 columnas adiabáticas y LAMBDA = 0 mezcla completa en cada fila.
+Se pondera la entalpía y no la temperatura porque así la mezcla conserva la
+energía exactamente para cualquier LAMBDA: la media ponderada de las h_sal,i es
+h_mez. Con cp constante las dos ponderaciones serían la misma cosa.
+
+PÉRDIDA DE CARGA. Es la ec. (19) del mismo artículo, integrada fila a fila
+porque aquí las propiedades cambian con la temperatura, más el término de
+aceleración que la (19) no lleva por tratar líquidos a propiedades constantes:
+
+    dp = sum_j f_j*dy/de*G''^2/(2*rho_j)                  [fricción]
+       + zeta_DZ/2*G''^2*(1/rho_ent + 1/rho_sal)          [zonas de distribución]
+       + G''^2*(1/rho_sal - 1/rho_ent)                    [aceleración]
+
+con G'' = G/f_ch el gasto por unidad de sección, que es el mismo en toda la
+placa. El zeta_DZ de la (19) se reparte a medias entre la zona de distribución
+de entrada y la de salida. Se calcula una pérdida por columna, bajando la
+presión fila a fila para evaluar cada densidad a la presión local, y se da la
+media ponderada por gasto.
+
+EL CÁLCULO TÉRMICO NO DEPENDE DE LA PRESIÓN, y por eso la pérdida de carga se
+calcula después y aparte. Con G'' fijo, Re = G''*de/mu no depende de rho, y cp,
+k y mu son los de gas diluido (ver props_fluido): ni Nu ni h ven la presión. El
+p del receptor es la presión a la ENTRADA, y solo interviene en la densidad de
+los términos de la pérdida de carga.
 
 La conductividad del acero se toma CONSTANTE (K_ACERO). La chapa es el 2.7 % de
 la resistencia al fluido, de modo que su temperatura no merece una iteración
@@ -31,21 +83,15 @@ asignacion deduce de la geometría, y h = Nu*k/de. La diferencia es que aquí la
 propiedades del fluido no son constantes: se evalúan en cada porción a su
 temperatura media con props_fluido.
 
-Nótese que la velocidad, y con ella h, no dependen de M: el gasto de una columna
-y su sección de paso son ambos proporcionales a dx, así que el cociente se
-cancela. Afinar la malla no cambia la física, solo la resolución del mapa.
-
-HIPÓTESIS. Cada columna es adiabática respecto a sus vecinas: ni conducción
-lateral por la chapa ni mezcla entre columnas. Es lo que hace que el perfil de
-salida reproduzca la forma de la campana. Con conducción lateral el perfil
-saldría más plano, de modo que éste es el caso conservador para el punto
-caliente. Tampoco se considera la pérdida de carga, ni el reparto real del
-caudal entre columnas (se supone uniforme), ni la reradiación entre porciones.
+HIPÓTESIS. Sin conducción lateral por la chapa entre porciones, más allá de la
+que recoge LAMBDA. El reparto del gasto entre columnas es el de sus anchuras de
+paso, sin redistribución por la diferencia de pérdida de carga entre ellas. No
+se considera la reradiación entre porciones.
 """
 
 from dataclasses import dataclass, field
 from importlib.util import module_from_spec, spec_from_file_location
-from math import sqrt
+from math import pi, sqrt
 from pathlib import Path
 
 import mapa as mp
@@ -88,6 +134,7 @@ T_CIELO = ((PESO_ENTORNO * T_ENTORNO ** 4 + PESO_CIELO * T_AMB ** 4)
 H_EXT = 20.0              # Coef. de convección exterior [W/(m2*K)]. Ver nota
 EPSILON = 0.85            # Emisividad de la cara expuesta [-]
 ABSORTIVIDAD = 1.0        # Fracción del flujo incidente que se absorbe [-]. Ver nota
+LAMBDA = 0.7              # Mezcla entre columnas: 1 adiabáticas, 0 mezcla completa [-]. Ver nota
 
 # H_EXT: mezcla de convección natural y forzada por viento sobre una pared
 # vertical caliente. La bibliografía de receptores de torre maneja de 10 W/(m2*K)
@@ -98,6 +145,16 @@ ABSORTIVIDAD = 1.0        # Fracción del flujo incidente que se absorbe [-]. Ve
 # ABSORTIVIDAD: a 1.0 el modelo es exactamente el balance pedido, con todo el
 # flujo del mapa entrando en la pared. Con una pintura selectiva tipo Pyromark
 # sería 0.95, y basta cambiar este número.
+#
+# LAMBDA: no hay dato publicado de cuánto se mezcla el flujo lateralmente en el
+# canal interno de una pillow plate. Los dos extremos acotan el problema; 0.5
+# es el punto medio, a falta de una simulación CFD o un ensayo que lo calibre.
+# OJO: se aplica en CADA FILA, y el efecto se compone: la diferencia entre
+# columnas que se crea en una fila queda multiplicada por LAMBDA en cada una de
+# las siguientes. Con las 71 filas de la placa base, la dispersión del perfil de
+# salida frente a la adiabática es del 72 % con LAMBDA = 0.99, el 25 % con 0.95,
+# el 10 % con 0.9 y el 1 % con 0.5: el perfil sale prácticamente plano. El valor
+# interesante está por encima de 0.9, y depende de s_L, que fija cuántas filas hay.
 
 
 K_ACERO = 20.0            # Conductividad térmica del AISI 321 [W/(m*K)]
@@ -160,27 +217,50 @@ class Receptor:
     mapa: mp.MapaGaussiano                  # Mapa de flujo incidente
     G: float                                # Gasto másico total [kg/s]
     T_ent: float                            # Temperatura de entrada, uniforme [K]
-    p: float = 10e5                         # Presión del aire [Pa]
-    N: int = 20                             # Porciones en altura
-    M: int = 10                             # Porciones en anchura
+    p: float = 10e5                         # Presión del aire a la entrada [Pa]
+    lam: float = LAMBDA                     # Mezcla entre columnas [-]
     panel: object = geom.PPHE1              # Geometría del panel pillow-plate
     fluido: object = pf.AIRE                # Fluido de trabajo
     h_ext: float = H_EXT
     eps: float = EPSILON
     alfa: float = ABSORTIVIDAD
+    N: int = field(init=False)              # Porciones en altura, L/s_L
+    M: int = field(init=False)              # Porciones en anchura, W/s_T
     n: object = field(init=False)           # Constantes n1..n5 de la geometría
     seccion: float = field(init=False)      # Sección de paso total del canal interno [m2]
     de: float = field(init=False)           # Diámetro equivalente del canal interno [m]
+    anchos: tuple = field(init=False)       # Anchura de paso de cada columna [m]
+    frac_soldadura: float = field(init=False)  # Fracción de área de puntos de soldadura [-]
 
     def __post_init__(self):
         """Fija de una vez lo que solo depende de la geometría, no de T."""
-        i = self.panel
+        i, W, L = self.panel, self.mapa.W, self.mapa.L
         fijar = lambda campo, valor: object.__setattr__(self, campo, valor)
+        if not 0.0 <= self.lam <= 1.0:
+            raise ValueError(f"lam tiene que estar entre 0 y 1, no {self.lam}.")
+
+        s_L = i.s_2l / 2                                  # Paso entre filas de soldaduras
+        M, N = max(round(W / i.s_t), 1), max(round(L / s_L), 1)
+        dx = W / M
+        if dx <= i.w_e or (M == 1 and W <= 2 * i.w_e):
+            raise ValueError(f"Las soldaduras de borde ({i.w_e*1e3:.0f} mm) no caben "
+                             f"en una columna de {dx*1e3:.0f} mm.")
+        fijar("M", M)
+        fijar("N", N)
+        # Las columnas de los extremos pierden la soldadura de borde
+        anchos = [dx] * M
+        anchos[0] -= i.w_e
+        anchos[-1] -= i.w_e
+        fijar("anchos", tuple(anchos))
+        # Un punto de soldadura por celda s_T x s_L: el patrón es al tresbolillo,
+        # con dos puntos por cada celda s_T x s_2l
+        fijar("frac_soldadura", (pi * i.d_sp ** 2 / 4) / (i.s_t * s_L))
+
         fijar("n", asig.asignacion_de_constantes(sT=i.s_t, s2L=i.s_2l, dsp=i.d_sp, h=i.b_i))
-        fijar("seccion", i.b_i / sqrt(2) * self.mapa.W)   # Ec. (16), sin soldaduras de borde
+        fijar("seccion", form.f_chI(i.b_i, W, i.w_e))    # Ec. (16), w_pp = W
         fijar("de", form.deI(i.b_i))                      # Ec. (14)
 
-    # -- Coeficiente de película interno -------------------------------------
+    # -- Canal interno ------------------------------------------------------
 
     def h_interno(self, T):
         """Coeficiente de película del canal interno a la temperatura T [W/(m2*K)].
@@ -196,13 +276,25 @@ class Receptor:
         Nu = form.NuI(n3=n.n3, n4=n.n4, n5=n.n5, Re=Re, Pr=pr.Pr)
         return Nu * pr.k / de, u, Re
 
+    def friccion(self, T, p):
+        """Pérdida de carga por fricción por unidad de longitud, a T y p [Pa/m].
+
+        Primer término de la ec. (19), f/de*rho*u^2/2, con f de la ec. (18).
+        """
+        pr = self.fluido.propiedades(T, p)
+        u = self.G / (pr.rho * self.seccion)
+        Re = form.Re(rho=pr.rho, u=u, dh=self.de, mu=pr.mu)
+        return form.fI(n1=self.n.n1, Re=Re, n2=self.n.n2) / self.de * pr.rho * u ** 2 / 2
+
     # -- Balance de una porción ----------------------------------------------
 
-    def _porcion(self, q_inc, T_ent, G_col, A):
+    def _porcion(self, q_inc, T_ent, G_col, A, A_f):
         """Resuelve una porción. Devuelve (T_sal, T_w, q_fluido).
 
-        Todo lo que hace falta dentro de las bisecciones se saca del objeto
-        aquí, una sola vez: lo de dentro se llama miles de veces por porción.
+        A es el área que recibe flujo y pierde calor; A_f, la que lo cede al
+        fluido. Todo lo que hace falta dentro de las bisecciones se saca del
+        objeto aquí, una sola vez: lo de dentro se llama miles de veces por
+        porción.
         """
         fluido, e = self.fluido, self.panel.delta_pp
         h_ext, eps = self.h_ext, self.eps
@@ -213,20 +305,19 @@ class Receptor:
             """Calor al fluido y pared, para una temperatura de salida de prueba."""
             T_f = 0.5 * (T_ent + T_sal)
             h_int = h_interno(T_f)[0]
-            # Resistencia chapa + película interna, por unidad de área [m2*K/W].
+            # Conductancia chapa + película interna de toda la porción [W/K].
             # Con K_ACERO constante no depende de T_w, así que se calcula aquí,
             # una vez, en vez de en cada evaluación de la bisección de abajo.
-            resistencia = e / K_ACERO + 1.0 / h_int
+            UA = A_f / (e / K_ACERO + 1.0 / h_int)
 
             def balance_pared(T_w):
-                return (q_abs - perdidas(T_w, A, h_ext, eps)
-                        - A * (T_w - T_f) / resistencia)
+                return q_abs - perdidas(T_w, A, h_ext, eps) - UA * (T_w - T_f)
 
             # La pared está entre el cielo (pierde más de lo que recibe) y la
             # temperatura a la que solo la radiación ya se lleva todo el flujo.
             T_w_max = max(T_f, (q_abs / (A * eps * SIGMA) + T_CIELO ** 4) ** 0.25) + 1.0
             T_w = _biseccion(balance_pared, T_CIELO, T_w_max)
-            return A * (T_w - T_f) / resistencia, T_w
+            return UA * (T_w - T_f), T_w
 
         def desequilibrio(T_sal):
             q_fluido, _ = cerrar(T_sal)
@@ -245,40 +336,118 @@ class Receptor:
         q_fluido, T_w = cerrar(T_sal)
         return T_sal, T_w, q_fluido
 
+    # -- Mezcla entre columnas -------------------------------------------------
+
+    def _mezclar(self, T_ad, G_col):
+        """Salida de una fila, ponderando adiabático y mezcla completa con lam.
+
+        La pondera en entalpía para que la mezcla conserve la energía: ver la
+        nota del módulo.
+        """
+        lam, h = self.lam, self.fluido.h
+        T_bajo, T_alto = min(T_ad), max(T_ad)
+        if lam == 1.0 or T_alto - T_bajo < 1e-9:
+            return list(T_ad)
+        h_ad = [h(T) for T in T_ad]
+        h_mez = sum(g * hi for g, hi in zip(G_col, h_ad)) / sum(G_col)
+        # Cada objetivo está entre la h mínima y la máxima de la fila; el margen
+        # de 1 K es solo para que el redondeo no lo deje fuera del intervalo.
+        a, b = max(T_bajo - 1.0, self.fluido.T_min), min(T_alto + 1.0, self.fluido.T_max)
+        salida = []
+        for h_i in h_ad:
+            objetivo = lam * h_i + (1.0 - lam) * h_mez
+            salida.append(_biseccion(lambda T: h(T) - objetivo, a, b, tol=1e-9))
+        return salida
+
     # -- Recorrido de la placa -----------------------------------------------
 
     def resolver(self):
-        """Resuelve la placa entera, de abajo arriba y columna a columna."""
+        """Resuelve la placa entera, fila a fila de abajo arriba."""
         M, N, porcion = self.M, self.N, self._porcion
-        A = (self.mapa.W / M) * (self.mapa.L / N)
-        G_col = self.G / M
+        dy = self.mapa.L / N
+        A = (self.mapa.W / M) * dy
+        G_col = [self.G * a / sum(self.anchos) for a in self.anchos]
+        A_f = [a * dy * (1.0 - self.frac_soldadura) for a in self.anchos]
         flujo = self.mapa.mapa_nodal(M, N)                # [W/m2] medio de cada porción
 
-        T_fluido = [[0.0] * M for _ in range(N)]          # T de salida de cada porción
-        T_pared = [[0.0] * M for _ in range(N)]
+        T_fluido = []                                     # T de salida de cada fila, ya mezclada
+        T_pared = []
         q_util = 0.0
-        for i in range(M):
-            T = self.T_ent
-            for j in range(N):                            # De abajo arriba
-                T, T_w, q = porcion(flujo[j][i] * A, T, G_col, A)
-                T_fluido[j][i], T_pared[j][i] = T, T_w
+        T = [self.T_ent] * M
+        for j in range(N):                                # De abajo arriba
+            T_ad, T_w = [0.0] * M, [0.0] * M
+            for i in range(M):
+                T_ad[i], T_w[i], q = porcion(flujo[j][i] * A, T[i], G_col[i], A, A_f[i])
                 q_util += q
-        return Resultado(receptor=self, T_fluido=T_fluido, T_pared=T_pared, q_util=q_util)
+            T = self._mezclar(T_ad, G_col)
+            T_fluido.append(T)
+            T_pared.append(T_w)
+
+        return Resultado(receptor=self, T_fluido=T_fluido, T_pared=T_pared, q_util=q_util,
+                         G_col=G_col, **self._perdida_carga(T_fluido))
+
+    def _perdida_carga(self, T_fluido):
+        """Pérdida de carga de cada columna, por términos [Pa].
+
+        Recorre cada columna de abajo arriba bajando la presión fila a fila,
+        porque la densidad a la que se evalúa cada término es la de la presión
+        local: con 100 kPa de pérdida sobre 10 bar, tomarla constante daba un
+        5 % de menos. Se hace después del cálculo térmico, y aparte, porque éste
+        no depende de la presión: ver la nota del módulo.
+        """
+        fluido, M, dy = self.fluido, self.M, self.mapa.L / self.N
+        G2 = (self.G / self.seccion) ** 2                 # G''^2 [kg2/(m4*s2)]
+        zeta = form.ZETA_DZ
+        friccion, distribucion, aceleracion = [0.0] * M, [0.0] * M, [0.0] * M
+        for i in range(M):
+            T, p = self.T_ent, self.p
+            v = 1.0 / fluido.rho(T, p)
+            distribucion[i] = zeta / 2 * G2 * v           # Zona de distribución de entrada
+            p -= distribucion[i]
+            for fila in T_fluido:
+                T_sal = fila[i]
+                dp = self.friccion(0.5 * (T + T_sal), p) * dy
+                friccion[i] += dp
+                v_sal = 1.0 / fluido.rho(T_sal, p - dp)
+                dp_acel = G2 * (v_sal - v)
+                aceleracion[i] += dp_acel
+                p -= dp + dp_acel
+                if p <= 0.0:
+                    raise ValueError(
+                        f"La pérdida de carga agota los {self.p/1e5:.1f} bar de entrada "
+                        f"antes de la salida. Sube la presión o baja el gasto."
+                    )
+                T, v = T_sal, v_sal
+            distribucion[i] += zeta / 2 * G2 * v          # Zona de distribución de salida
+        return dict(dp_friccion=friccion, dp_distribucion=distribucion,
+                    dp_aceleracion=aceleracion)
 
 
 @dataclass(frozen=True)
 class Resultado:
-    """Campo de temperaturas de la placa y balance global."""
+    """Campo de temperaturas de la placa, pérdida de carga y balance global."""
 
     receptor: Receptor
-    T_fluido: list      # T_fluido[j][i]: salida de la porción (columna i, fila j) [K]
-    T_pared: list       # Temperatura de la pared de cada porción [K]
-    q_util: float       # Calor total absorbido por el fluido [W]
+    T_fluido: list          # T_fluido[j][i]: salida de la porción (columna i, fila j) [K]
+    T_pared: list           # Temperatura de la pared de cada porción [K]
+    q_util: float           # Calor total absorbido por el fluido [W]
+    G_col: list             # Gasto de cada columna [kg/s]
+    dp_friccion: list       # Pérdida de carga de cada columna, por término [Pa]
+    dp_distribucion: list
+    dp_aceleracion: list
 
     @property
     def perfil_salida(self):
         """Temperatura del fluido en y = L, columna a columna [K]. Lo pedido."""
         return self.T_fluido[-1]
+
+    @property
+    def T_salida_media(self):
+        """Temperatura de mezcla del fluido a la salida, por entalpía [K]."""
+        r = self.receptor
+        h_media = r.fluido.h(r.T_ent) + self.q_util / r.G
+        return _biseccion(lambda T: r.fluido.h(T) - h_media, r.fluido.T_min, r.fluido.T_max,
+                          tol=1e-9)
 
     @property
     def x_centros(self):
@@ -291,34 +460,61 @@ class Resultado:
         """Temperatura máxima de la pared [K]. El límite del AISI 321 son ~1150 K."""
         return max(max(fila) for fila in self.T_pared)
 
+    def _media(self, valores):
+        """Media ponderada por el gasto de cada columna."""
+        return sum(g * v for g, v in zip(self.G_col, valores)) / self.receptor.G
+
+    @property
+    def dp_columnas(self):
+        """Pérdida de carga total de cada columna [Pa]."""
+        return [a + b + c for a, b, c in
+                zip(self.dp_friccion, self.dp_distribucion, self.dp_aceleracion)]
+
+    @property
+    def perdida_carga(self):
+        """Pérdida de carga del receptor, media ponderada por gasto [Pa]."""
+        return self._media(self.dp_columnas)
+
     @property
     def rendimiento(self):
         """Calor al fluido entre calor incidente sobre la placa [-]."""
         return self.q_util / self.receptor.mapa.potencia_total()
 
     def resumen(self):
-        """Imprime el balance y el perfil de salida."""
+        """Imprime el balance, la pérdida de carga y el perfil de salida."""
         r = self.receptor
         Q = r.mapa.potencia_total()
-        h_int, u, Re = r.h_interno(0.5 * (r.T_ent + sum(self.perfil_salida) / r.M))
-        T_media = sum(self.perfil_salida) / r.M
+        T_media = self.T_salida_media
+        h_int, u, Re = r.h_interno(0.5 * (r.T_ent + T_media))
+        C = pf.CERO_CELSIUS
         print(f"\n{r.mapa.resumen()}")
         print(f"Aire a {r.p/1e5:.1f} bar, G = {r.G:.3f} kg/s, entrada a "
-              f"{r.T_ent - pf.CERO_CELSIUS:.0f} C, malla {r.M} x {r.N}")
-        print(f"Canal interno: u = {u:.1f} m/s, Re = {Re:.3g}, h = {h_int:.0f} W/(m2*K) "
-              f"(a la T media del fluido)")
+              f"{r.T_ent - C:.0f} C, lambda = {r.lam:.2f}")
+        print(f"Malla {r.M} x {r.N} (dx = {r.mapa.W/r.M*1e3:.1f} mm, "
+              f"dy = {r.mapa.L/r.N*1e3:.1f} mm), soldaduras {r.frac_soldadura*100:.2f} % "
+              f"del area de cada porcion")
+        print(f"Canal interno: seccion {r.seccion*1e4:.2f} cm2, u = {u:.1f} m/s, "
+              f"Re = {Re:.3g}, h = {h_int:.0f} W/(m2*K) (a la T media del fluido)")
         print(f"\nQ incidente {Q/1e3:8.1f} kW")
         print(f"Q al fluido {self.q_util/1e3:8.1f} kW   (rendimiento "
               f"{self.rendimiento*100:.1f} %)")
         print(f"Perdidas    {(Q - self.q_util)/1e3:8.1f} kW")
-        print(f"\nSalida en y = L: media {T_media - pf.CERO_CELSIUS:.0f} C, "
-              f"maxima {max(self.perfil_salida) - pf.CERO_CELSIUS:.0f} C, "
-              f"minima {min(self.perfil_salida) - pf.CERO_CELSIUS:.0f} C")
-        print(f"Pared: maxima {self.T_pared_max - pf.CERO_CELSIUS:.0f} C"
+        dp = self.dp_columnas
+        print(f"\nPerdida de carga {self.perdida_carga/1e3:.2f} kPa: friccion "
+              f"{self._media(self.dp_friccion)/1e3:.2f}, distribucion "
+              f"{self._media(self.dp_distribucion)/1e3:.2f}, aceleracion "
+              f"{self._media(self.dp_aceleracion)/1e3:.2f} "
+              f"(entre columnas, de {min(dp)/1e3:.2f} a {max(dp)/1e3:.2f})")
+        print(f"\nSalida en y = L: mezcla {T_media - C:.0f} C, "
+              f"maxima {max(self.perfil_salida) - C:.0f} C, "
+              f"minima {min(self.perfil_salida) - C:.0f} C")
+        print(f"Pared: maxima {self.T_pared_max - C:.0f} C"
               f"{'  <-- POR ENCIMA DEL LIMITE DEL AISI 321' if self.T_pared_max > 1150 else ''}")
         print("\nPerfil de salida T(x) en y = L [C]:")
-        print("  x [m]:  " + " ".join(f"{x:6.3f}" for x in self.x_centros))
-        print("  T [C]:  " + " ".join(f"{T - pf.CERO_CELSIUS:6.0f}" for T in self.perfil_salida))
+        for k in range(0, r.M, 11):                       # En tramos, que no desborde
+            tramo = slice(k, k + 11)
+            print("  x [m]:  " + " ".join(f"{x:6.3f}" for x in self.x_centros[tramo]))
+            print("  T [C]:  " + " ".join(f"{T - C:6.0f}" for T in self.perfil_salida[tramo]))
 
     def dibujar(self, archivo=None, mostrar=True):
         """Campo de temperaturas del fluido y perfil de salida en y = L."""
@@ -344,7 +540,7 @@ class Resultado:
         ax2.set_xlim(0.0, r.mapa.W)
         ax2.set_xlabel("x, anchura [m]")
         ax2.set_ylabel("T [C]")
-        ax2.set_title("Salida del fluido en y = L")
+        ax2.set_title(f"Salida del fluido en y = L, lambda = {r.lam:.2f}")
         ax2.grid(alpha=0.3)
 
         fig.tight_layout()
@@ -356,24 +552,40 @@ class Resultado:
         return fig
 
 
+def tabla(resultados):
+    """Tabla de consola con lo esencial de cada caso resuelto."""
+    encabezado = (f"{'T entrada [C]':>14}{'dp [kPa]':>11}{'Q fluido [kW]':>15}"
+                  f"{'rendimiento [%]':>17}")
+    print("\n" + encabezado)
+    print("-" * len(encabezado))
+    for res in resultados:
+        print(f"{res.receptor.T_ent - pf.CERO_CELSIUS:14.0f}{res.perdida_carga/1e3:11.2f}"
+              f"{res.q_util/1e3:15.1f}{res.rendimiento*100:17.1f}")
+
+
 # =============================================================================
 # Caso de ejemplo
 # =============================================================================
 
 if __name__ == "__main__":
-    # Punto de trabajo escogido para que la pared no rebase el límite del AISI
-    # 321 y el Reynolds quede cerca del de los casos con los que se validó la
-    # correlación de Nusselt. Con 300 kW/m2 de pico y este mismo gasto, la pared
-    # se va a 946 C y el acero no aguanta: hay que subir el gasto a 0.6 kg/s.
+    from dataclasses import replace
+
+    # Placa de 1.5 x 1.5 m con sigmas de un tercio del lado y 200 kW/m2 de pico:
+    # 236 kW sobre la placa. El gasto es el del caso anterior de 1.0 m de ancho
+    # escalado con la potencia, 0.6*1.5 kg/s, para que la pared quede en la
+    # misma zona de temperaturas. 10 bar: a presión atmosférica este gasto
+    # pediría del orden de 300 m/s en el canal.
     receptor = Receptor(
-        mapa=mp.MapaGaussiano.desde_pico(L=1.5, W=1.0, q_pico=200e3,
-                                         sigma_x=1 / 3, sigma_y=0.5),
-        G=0.6,                          # kg/s de aire
+        mapa=mp.MapaGaussiano.desde_pico(L=1.5, W=1.5, q_pico=200e3,
+                                         sigma_x=0.5, sigma_y=0.5),
+        G=0.9,                           # kg/s de aire
         T_ent=pf.CERO_CELSIUS + 300,     # 300 C a la entrada, uniforme
-        p=10e5,                          # 10 bar: a presión atmosférica este
-                                         # gasto pediría 300 m/s en el canal
-        N=20, M=10,
+        p=10e5,
     )
-    resultado = receptor.resolver()
-    resultado.resumen()
-    resultado.dibujar()
+
+    # Barrido en la temperatura de entrada, y el detalle del caso de 300 C
+    resultados = [replace(receptor, T_ent=pf.CERO_CELSIUS + T).resolver()
+                  for T in (200, 300, 400, 500)]
+    tabla(resultados)
+    resultados[1].resumen()
+    resultados[1].dibujar()
