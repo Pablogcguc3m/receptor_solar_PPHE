@@ -990,8 +990,8 @@ function pintarSoldaduras(o, r, ancho, alto){
   var borde = r.panel.w_e * ex;
   o.fillRect(0, 0, borde, alto);
   o.fillRect(ancho - borde, 0, borde, alto);
-  // A escala real salen de 1-2 px con la placa de 1,5 m: un mínimo para que se vean
-  var rx = Math.max(r.panel.d_sp / 2 * ex, 0.9), ry = Math.max(r.panel.d_sp / 2 * ey, 0.9);
+  // Exactamente a escala: el diámetro es el d_sp del deslizador, sin mínimos
+  var rx = r.panel.d_sp / 2 * ex, ry = r.panel.d_sp / 2 * ey;
   o.beginPath();
   for (j = 0; j < N; j++){
     var y = alto - (j + 0.5) * r.dy * ey;
