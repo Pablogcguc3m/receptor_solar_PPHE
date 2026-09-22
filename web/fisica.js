@@ -351,6 +351,7 @@
    *   lam         [-]     mezcla entre columnas: 1 adiabaticas, 0 mezcla completa
    *   panel       id de PANELES
    *   s_t, s_2l   [m]     pasos de soldadura, opcionales: sustituyen a los del panel
+   *   b_i, d_sp   [m]     expansion interna y diametro de soldadura, idem
    *   h_ext, eps, alfa
    *
    * La malla no se elige: la dicta el patron de soldaduras del panel, una
@@ -360,6 +361,8 @@
     var panel = Object.assign({}, PANELES[cfg.panel] || PANELES.PPHE1);
     if (cfg.s_t) panel.s_t = cfg.s_t;
     if (cfg.s_2l) panel.s_2l = cfg.s_2l;
+    if (cfg.b_i) panel.b_i = cfg.b_i;
+    if (cfg.d_sp) panel.d_sp = cfg.d_sp;
     var fluido = AIRE;
 
     var mapa = cfg.modo === 'potencia'
