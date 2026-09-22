@@ -230,3 +230,11 @@ informes/
 
 # PDF generados junto a un .tex versionado (la fuente si va, el generado no)
 modelo_receptor/*.pdf
+
+# Configuracion local de Claude Code (ajustes y servidor de vista previa)
+.claude/
+
+# Disenos de Affinity y sus bloqueos mientras estan abiertos. El icono que
+# se publica es el SVG exportado; la fuente no va al repo ni a la pagina.
+*.af
+*~lock~
