@@ -355,7 +355,7 @@
    *   h_ext, eps, alfa
    *
    * La malla no se elige: la dicta el patron de soldaduras del panel, una
-   * porcion por celda s_T x s_L. M = W/s_T y N = L/s_L, redondeados.
+   * porcion por celda s_T x 2s_L. M = W/s_T y N = L/(2 s_L), redondeados.
    */
   function resolver(cfg) {
     var panel = Object.assign({}, PANELES[cfg.panel] || PANELES.PPHE1);
@@ -375,17 +375,18 @@
     }
 
     // -- Malla dictada por el patron de soldaduras ---------------------------
-    var s_L = panel.s_2l / 2;
+    // Cada porcion es la celda s_T x 2s_L: un cuarto de punto de soldadura en
+    // cada esquina y uno entero en el centro
     var M = Math.max(Math.round(mapa.W / panel.s_t), 1);
-    var N = Math.max(Math.round(mapa.L / s_L), 1);
+    var N = Math.max(Math.round(mapa.L / panel.s_2l), 1);
     var dx = mapa.W / M, dy = mapa.L / N;
     // Sin soldaduras de borde (w_e = 0): todas las columnas con el mismo ancho
     var anchos = [], i, j;
     for (i = 0; i < M; i++) anchos.push(dx);
     var sumaAnchos = 0.0;
     for (i = 0; i < M; i++) sumaAnchos += anchos[i];
-    // Un punto de soldadura por celda s_T x s_L (tresbolillo)
-    var fracSoldadura = (Math.PI * panel.d_sp * panel.d_sp / 4) / (panel.s_t * s_L);
+    // Dos puntos de soldadura por celda s_T x 2s_L (tresbolillo)
+    var fracSoldadura = 2 * (Math.PI * panel.d_sp * panel.d_sp / 4) / (panel.s_t * panel.s_2l);
 
     var n = asignacionDeConstantes(panel.s_t, panel.s_2l, panel.d_sp, panel.b_i);
     var seccion = fChI(panel.b_i, mapa.W, 0.0);        // Ec. (16), w_pp = W, w_e = 0

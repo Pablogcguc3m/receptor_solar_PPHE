@@ -1,10 +1,13 @@
 """Balance de energía del receptor, porción a porción, y temperatura de salida.
 
 La placa L x W se parte en N filas y M columnas, y la malla la dicta el panel:
-cada porción es una celda del patrón de soldaduras, dx = s_T de ancho y dy = s_L
-de alto (s_L es la mitad del s_2l de la geometría). Por eso M = W/s_T y
-N = L/s_L, redondeados al entero más próximo; dx y dy se reajustan luego para
-cubrir la placa exacta. Con PPHE1 y la placa de 1.5 x 1.5 m salen 21 x 71.
+cada porción es una celda del patrón de soldaduras, dx = s_T de ancho y
+dy = 2*s_L de alto (el s_2l de la geometría), con un cuarto de punto de
+soldadura en cada esquina y uno entero en el centro. Por eso M = W/s_T y
+N = L/s_2l, redondeados al entero más próximo; dx y dy se reajustan luego para
+cubrir la placa exacta. Con PPHE1 y la placa de 1.5 x 1.5 m salen 21 x 36.
+Así la porción tiene la forma de la celda de cada familia de Piper: cuadrada
+cuando s_2l = s_T, alargada cuando s_2l/s_T = 1.71 y apaisada cuando es 0.58.
 
 El aire entra por abajo a T_ent uniforme, sube fila a fila y sale por y = L. La
 salida de una fila es la entrada de la de encima. El resultado es el perfil
@@ -27,7 +30,8 @@ robustez: nunca diverge, y el coste no importa con mallas de este tamaño.
 
 A y A_f NO SON LA MISMA ÁREA. La porción recibe flujo y pierde calor por toda su
 cara, A = dx*dy, pero solo cede calor al fluido por A_f, lo que queda de A al
-quitarle el punto de soldadura de la celda, que no tiene aire detrás. Se supone
+quitarle los puntos de soldadura de la celda (el central y los cuatro cuartos
+de las esquinas), que no tienen aire detrás. Se supone
 que la chapa está a la misma T_w en toda la porción, de modo que el calor que
 cae sobre la soldadura llega al fluido por conducción lateral a través de la
 chapa que la rodea; lo que se pierde es superficie de intercambio, no calor
@@ -155,10 +159,10 @@ LAMBDA = 0.7              # Mezcla entre columnas: 1 adiabáticas, 0 mezcla comp
 # valor por defecto no está calibrado: falta una simulación CFD o un ensayo.
 # OJO: se aplica en CADA FILA, y el efecto se compone: la diferencia entre
 # columnas que se crea en una fila queda multiplicada por LAMBDA en cada una de
-# las siguientes. Con las 71 filas de la placa base, la dispersión del perfil de
-# salida frente a la adiabática es del 71 % con LAMBDA = 0.99, el 24 % con 0.95,
-# el 10 % con 0.9 y el 2 % con 0.7: el perfil sale prácticamente plano. El valor
-# interesante está por encima de 0.9, y depende de s_L, que fija cuántas filas hay.
+# las siguientes. Con las 36 filas de la placa base, la dispersión del perfil de
+# salida frente a la adiabática es del 84 % con LAMBDA = 0.99, el 44 % con 0.95,
+# el 22 % con 0.9 y el 4 % con 0.7: el perfil sale casi plano. El valor
+# interesante está por encima de 0.8, y depende de s_L, que fija cuántas filas hay.
 
 
 K_ACERO = 20.0            # Conductividad térmica del AISI 321 [W/(m*K)]
@@ -228,7 +232,7 @@ class Receptor:
     h_ext: float = H_EXT
     eps: float = EPSILON
     alfa: float = ABSORTIVIDAD
-    N: int = field(init=False)              # Porciones en altura, L/s_L
+    N: int = field(init=False)              # Porciones en altura, L/s_2l
     M: int = field(init=False)              # Porciones en anchura, W/s_T
     n: object = field(init=False)           # Constantes n1..n5 de la geometría
     seccion: float = field(init=False)      # Sección de paso total del canal interno [m2]
@@ -243,16 +247,15 @@ class Receptor:
         if not 0.0 <= self.lam <= 1.0:
             raise ValueError(f"lam tiene que estar entre 0 y 1, no {self.lam}.")
 
-        s_L = i.s_2l / 2                                  # Paso entre filas de soldaduras
-        M, N = max(round(W / i.s_t), 1), max(round(L / s_L), 1)
+        M, N = max(round(W / i.s_t), 1), max(round(L / i.s_2l), 1)
         fijar("M", M)
         fijar("N", N)
         # Sin soldaduras de borde todas las columnas tienen el mismo ancho de
         # paso; se conserva la lista por columnas por si se reintroducen
         fijar("anchos", (W / M,) * M)
-        # Un punto de soldadura por celda s_T x s_L: el patrón es al tresbolillo,
-        # con dos puntos por cada celda s_T x s_2l
-        fijar("frac_soldadura", (pi * i.d_sp ** 2 / 4) / (i.s_t * s_L))
+        # Dos puntos de soldadura por celda s_T x s_2l: cuatro cuartos en las
+        # esquinas y uno en el centro, al tresbolillo
+        fijar("frac_soldadura", 2 * (pi * i.d_sp ** 2 / 4) / (i.s_t * i.s_2l))
 
         fijar("n", asig.asignacion_de_constantes(sT=i.s_t, s2L=i.s_2l, dsp=i.d_sp, h=i.b_i))
         fijar("seccion", form.f_chI(i.b_i, W, 0.0))      # Ec. (16), w_pp = W, w_e = 0
