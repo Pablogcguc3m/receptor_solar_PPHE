@@ -27,17 +27,21 @@ robustez: nunca diverge, y el coste no importa con mallas de este tamaño.
 
 A y A_f NO SON LA MISMA ÁREA. La porción recibe flujo y pierde calor por toda su
 cara, A = dx*dy, pero solo cede calor al fluido por A_f, lo que queda de A al
-quitarle lo que no tiene aire detrás: el punto de soldadura de la celda y, en
-las dos columnas de los extremos, la soldadura de borde w_e. Se supone que la
-chapa está a la misma T_w en toda la porción, de modo que el calor que cae
-sobre la soldadura llega al fluido por conducción lateral a través de la chapa
-que la rodea; lo que se pierde es superficie de intercambio, no calor incidente.
+quitarle el punto de soldadura de la celda, que no tiene aire detrás. Se supone
+que la chapa está a la misma T_w en toda la porción, de modo que el calor que
+cae sobre la soldadura llega al fluido por conducción lateral a través de la
+chapa que la rodea; lo que se pierde es superficie de intercambio, no calor
+incidente.
 
 LA SECCIÓN DE PASO es la de la ec. (16) de O. Arsenyeva, f_ch = b_i/sqrt(2) *
-(W - 2*w_e), con el ancho de la placa en el papel del w_pp del panel. El gasto
-se reparte entre columnas en proporción a su anchura de paso: las interiores
-llevan dx y las dos de los extremos dx - w_e. Así la velocidad, u = G/(rho*f_ch)
-por la ec. (3), es la misma en todas las columnas a igual temperatura.
+(w_pp - 2*w_e), con el ancho de la placa en el papel de w_pp y SIN SOLDADURAS DE
+BORDE (w_e = 0): la placa del receptor se trata como un campo de celdas de
+soldadura que la cubre entera. Tenerlas en cuenta dejaba a las dos columnas de
+los extremos con menos anchura de paso y menos gasto pero con el flujo de toda
+su anchura, y su salida repuntaba en el perfil: el calor de la franja soldada,
+que en realidad se pierde en buena parte por radiación, iba entero a ese aire.
+Todas las columnas llevan así el mismo gasto, G/M, y la misma velocidad,
+u = G/(rho*f_ch) por la ec. (3), a igual temperatura.
 
 MEZCLA ENTRE COLUMNAS, el factor LAMBDA. Cada fila se resuelve primero con las
 columnas adiabáticas entre sí, lo que da una entalpía de salida h_ad,i por
@@ -84,9 +88,9 @@ propiedades del fluido no son constantes: se evalúan en cada porción a su
 temperatura media con props_fluido.
 
 HIPÓTESIS. Sin conducción lateral por la chapa entre porciones, más allá de la
-que recoge LAMBDA. El reparto del gasto entre columnas es el de sus anchuras de
-paso, sin redistribución por la diferencia de pérdida de carga entre ellas. No
-se considera la reradiación entre porciones.
+que recoge LAMBDA. El gasto se reparte por igual entre columnas, sin
+redistribución por la diferencia de pérdida de carga entre ellas. No se
+consideran las soldaduras de borde ni la reradiación entre porciones.
 """
 
 from dataclasses import dataclass, field
@@ -147,13 +151,13 @@ LAMBDA = 0.7              # Mezcla entre columnas: 1 adiabáticas, 0 mezcla comp
 # sería 0.95, y basta cambiar este número.
 #
 # LAMBDA: no hay dato publicado de cuánto se mezcla el flujo lateralmente en el
-# canal interno de una pillow plate. Los dos extremos acotan el problema; 0.5
-# es el punto medio, a falta de una simulación CFD o un ensayo que lo calibre.
+# canal interno de una pillow plate. Los dos extremos acotan el problema, y el
+# valor por defecto no está calibrado: falta una simulación CFD o un ensayo.
 # OJO: se aplica en CADA FILA, y el efecto se compone: la diferencia entre
 # columnas que se crea en una fila queda multiplicada por LAMBDA en cada una de
 # las siguientes. Con las 71 filas de la placa base, la dispersión del perfil de
-# salida frente a la adiabática es del 72 % con LAMBDA = 0.99, el 25 % con 0.95,
-# el 10 % con 0.9 y el 1 % con 0.5: el perfil sale prácticamente plano. El valor
+# salida frente a la adiabática es del 71 % con LAMBDA = 0.99, el 24 % con 0.95,
+# el 10 % con 0.9 y el 2 % con 0.7: el perfil sale prácticamente plano. El valor
 # interesante está por encima de 0.9, y depende de s_L, que fija cuántas filas hay.
 
 
@@ -229,7 +233,7 @@ class Receptor:
     n: object = field(init=False)           # Constantes n1..n5 de la geometría
     seccion: float = field(init=False)      # Sección de paso total del canal interno [m2]
     de: float = field(init=False)           # Diámetro equivalente del canal interno [m]
-    anchos: tuple = field(init=False)       # Anchura de paso de cada columna [m]
+    anchos: tuple = field(init=False)       # Anchura de paso de cada columna [m], todas dx
     frac_soldadura: float = field(init=False)  # Fracción de área de puntos de soldadura [-]
 
     def __post_init__(self):
@@ -241,23 +245,17 @@ class Receptor:
 
         s_L = i.s_2l / 2                                  # Paso entre filas de soldaduras
         M, N = max(round(W / i.s_t), 1), max(round(L / s_L), 1)
-        dx = W / M
-        if dx <= i.w_e or (M == 1 and W <= 2 * i.w_e):
-            raise ValueError(f"Las soldaduras de borde ({i.w_e*1e3:.0f} mm) no caben "
-                             f"en una columna de {dx*1e3:.0f} mm.")
         fijar("M", M)
         fijar("N", N)
-        # Las columnas de los extremos pierden la soldadura de borde
-        anchos = [dx] * M
-        anchos[0] -= i.w_e
-        anchos[-1] -= i.w_e
-        fijar("anchos", tuple(anchos))
+        # Sin soldaduras de borde todas las columnas tienen el mismo ancho de
+        # paso; se conserva la lista por columnas por si se reintroducen
+        fijar("anchos", (W / M,) * M)
         # Un punto de soldadura por celda s_T x s_L: el patrón es al tresbolillo,
         # con dos puntos por cada celda s_T x s_2l
         fijar("frac_soldadura", (pi * i.d_sp ** 2 / 4) / (i.s_t * s_L))
 
         fijar("n", asig.asignacion_de_constantes(sT=i.s_t, s2L=i.s_2l, dsp=i.d_sp, h=i.b_i))
-        fijar("seccion", form.f_chI(i.b_i, W, i.w_e))    # Ec. (16), w_pp = W
+        fijar("seccion", form.f_chI(i.b_i, W, 0.0))      # Ec. (16), w_pp = W, w_e = 0
         fijar("de", form.deI(i.b_i))                      # Ec. (14)
 
     # -- Canal interno ------------------------------------------------------

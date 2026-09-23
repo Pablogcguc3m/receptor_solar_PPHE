@@ -13,7 +13,7 @@
 \title{Cómo funciona \texttt{receptor.py}\\
        \large Documentación del módulo de balance nodal del receptor}
 \author{Modelo del receptor solar PPHE}
-\date{19 de septiembre de 2026}
+\date{23 de septiembre de 2026}
 
 \begin{document}
 \maketitle
@@ -23,17 +23,22 @@
 \section{Qué hace el módulo y dónde encaja}
 
 \texttt{receptor.py} es el módulo que \emph{une} las dos mitades del modelo. No
-contiene correlaciones propias --- por eso el \texttt{formulas.py} de esta carpeta
-sigue vacío ---: lo que hace es tomar un mapa de flujo incidente, un fluido con
-propiedades variables y la cadena termohidráulica del canal de una
+contiene correlaciones propias: lo que hace es tomar un mapa de flujo incidente,
+un fluido con propiedades variables y la cadena termohidráulica del canal de una
 \emph{pillow plate}, y resolver con las tres cosas el balance de energía de la
-placa, porción a porción.
+placa, porción a porción, y la pérdida de carga del canal.
 
 Su entrada es un objeto \texttt{MapaGaussiano} más un punto de trabajo (gasto,
-temperatura de entrada, presión, malla, geometría de panel). Su salida es un
-objeto \texttt{Resultado} con dos matrices de temperatura --- la del fluido y la de
-la pared --- y el calor total absorbido. El resultado que pedía el encargo del
-modelo es el perfil $T(x)$ en $y = L$.
+temperatura de entrada, presión de entrada, factor de mezcla $\lambda$ y
+geometría del panel). La malla no se elige: la dicta el patrón de soldaduras del
+panel. Su salida es un objeto \texttt{Resultado} con dos matrices de temperatura
+--- la del fluido y la de la pared ---, el calor total absorbido y la pérdida de
+carga de cada columna. El resultado que pedía el encargo del modelo es el perfil
+$T(x)$ en $y = L$.
+
+Al ejecutarlo como script imprime una tabla con la temperatura de entrada, la
+pérdida de carga, el calor absorbido por el fluido y el rendimiento para varias
+temperaturas de entrada, y a continuación el detalle del caso de 300~$^\circ$C.
 
 \subsection{Dependencias}
 
@@ -44,7 +49,7 @@ modelo es el perfil $T(x)$ en $y = L$.
   \midrule
   \texttt{modelo\_receptor/mapa.py}          & \texttt{mp}   & $q''(x,y)$ y su reparto nodal \\
   \texttt{modelo\_receptor/props\_fluido.py} & \texttt{pf}   & $\rho$, $c_p$, $k$, $\mu$, $h(T)$ del aire \\
-  \texttt{modelo\_termohidraulico/formulas.py}   & \texttt{form} & $Re$, $Nu_I$ (20), $d_{e,I}$ (14) \\
+  \texttt{modelo\_termohidraulico/formulas.py}   & \texttt{form} & $Re$, $Nu_I$ (20), $f_I$ (18), $d_{e,I}$ (14)... \\
   \texttt{modelo\_termohidraulico/asignacion.py} & \texttt{asig} & constantes $n_1\ldots n_5$ \\
   \texttt{modelo\_termohidraulico/geometria.py}  & \texttt{geom} & PPHE1, PPHE2, PPHE3 \\
   \bottomrule
@@ -86,17 +91,34 @@ dirección en que corre el fluido:
   x \in [0, W], \qquad y \in [0, L].
 \]
 
-La placa se parte en $N$ filas de altura $\Delta y = L/N$ y $M$ columnas de
-anchura $\Delta x = W/M$. Cada porción tiene área
-\[
-  A = \frac{W}{M}\cdot\frac{L}{N},
-\]
-y cada columna recibe una fracción $G_{\mathrm{col}} = G/M$ del gasto total.
+\subsection{La malla la dicta el patrón de soldaduras}
 
-\paragraph{Cada columna es un canal.} El aire entra por abajo a
-$T_{\mathrm{ent}}$ uniforme, atraviesa las $N$ porciones de su columna y sale por
-$y = L$. La salida de una porción es la entrada de la de encima. Las columnas no
-se hablan entre sí: son adiabáticas unas respecto a otras.
+Cada porción es una celda del patrón de soldaduras: $s_T$ de ancho y $s_L$ de
+alto, con $s_L = s_{2L}/2$ (la geometría guarda el paso $2s_L$ de la Tabla~1 de
+Arsenyeva). Como el patrón es al tresbolillo, con dos puntos por cada celda
+$s_T \times 2s_L$, cada porción contiene exactamente un punto de soldadura.
+\[
+  M = \operatorname{round}\!\left(\frac{W}{s_T}\right), \qquad
+  N = \operatorname{round}\!\left(\frac{L}{s_L}\right), \qquad
+  \Delta x = \frac{W}{M}, \qquad \Delta y = \frac{L}{N}.
+\]
+Los cocientes no suelen ser enteros, así que se redondean y luego $\Delta x$ y
+$\Delta y$ se reajustan para cubrir la placa exacta. Con PPHE1 ($s_T = 72$~mm,
+$s_L = 21$~mm) y la placa de $1{,}5\times1{,}5$~m, $W/s_T = 20{,}83$ y
+$L/s_L = 71{,}43$: la malla es de $21\times71$ porciones de
+$71{,}4\times21{,}1$~mm.
+
+$M$ y $N$ \emph{no} son parámetros del constructor. Con la malla ligada a la
+geometría cada porción tiene un significado físico --- una celda del panel ---,
+y eso es lo que da sentido a descontar un punto de soldadura por porción
+(sección~\ref{sec:soldaduras}) y a aplicar la mezcla fila a fila
+(sección~\ref{sec:mezcla}).
+
+\subsection{Recorrido y acoplamiento}
+
+El aire entra por abajo a $T_{\mathrm{ent}}$ uniforme y sube fila a fila hasta
+salir por $y = L$. La salida de una fila, una vez mezclada, es la entrada de la
+de encima. Todas las columnas llevan el mismo gasto, $G_{\mathrm{col}} = G/M$.
 
 \paragraph{Indexado.} Las matrices de resultado se recorren
 \texttt{T[j][i]}, con $j$ creciendo en $y$ (de abajo arriba) e $i$ creciendo en
@@ -135,21 +157,21 @@ La media se hace en la cuarta potencia, y no en la temperatura, porque lo que se
 suma físicamente son emitancias, que van con $T^4$; promediar temperaturas daría
 otro número.
 
-Es importante notar que este valor se calcula \emph{una vez} al importar el
-módulo y queda fijo. No es un parámetro del constructor, a diferencia de
-$h_{\mathrm{ext}}$, $\varepsilon$ y $\alpha$: para cambiarlo hay que editar el
-módulo.
+Este valor se calcula \emph{una vez} al importar el módulo y queda fijo. No es un
+parámetro del constructor, a diferencia de $h_{\mathrm{ext}}$, $\varepsilon$ y
+$\alpha$: para cambiarlo hay que editar el módulo.
 
-\subsection{Los tres parámetros de la cara expuesta}
+\subsection{Los parámetros de la cara expuesta y de la mezcla}
 
 \begin{center}
 \begin{tabular}{llrl}
   \toprule
   Constante & Significado & Valor & ¿Configurable? \\
   \midrule
-  \texttt{H\_EXT}        & Convección exterior & 20~W/(m$^2$K) & sí, campo \texttt{h\_ext} \\
-  \texttt{EPSILON}       & Emisividad          & 0,85          & sí, campo \texttt{eps} \\
-  \texttt{ABSORTIVIDAD}  & Absortividad        & 1,00          & sí, campo \texttt{alfa} \\
+  \texttt{H\_EXT}        & Convección exterior      & 20~W/(m$^2$K) & sí, campo \texttt{h\_ext} \\
+  \texttt{EPSILON}       & Emisividad               & 0,85          & sí, campo \texttt{eps} \\
+  \texttt{ABSORTIVIDAD}  & Absortividad             & 1,00          & sí, campo \texttt{alfa} \\
+  \texttt{LAMBDA}        & Mezcla entre columnas    & 0,70          & sí, campo \texttt{lam} \\
   \bottomrule
 \end{tabular}
 \end{center}
@@ -158,9 +180,8 @@ $h_{\mathrm{ext}}$ mezcla convección natural y forzada por viento sobre una par
 vertical caliente. La bibliografía de receptores de torre maneja de 10~W/(m$^2$K)
 en calma a 30 con viento, y 20 es el valor intermedio habitual. Es de los
 parámetros más inciertos del modelo y, aun así, de los menos influyentes, porque
-a estas temperaturas la radiación domina: en el nodo más caliente del caso de
-referencia se lleva 2,84 veces más calor que la convección, y la proporción
-crece con la temperatura (tabla~\ref{tab:radconv}).
+a estas temperaturas la radiación domina, y la proporción crece con la
+temperatura (tabla~\ref{tab:radconv}).
 
 \begin{table}[h]
 \centering
@@ -181,8 +202,11 @@ incertidumbre de $h_{\mathrm{ext}}$ importe poco.}
 
 $\alpha = 1$ deja el modelo en el balance exacto que pedía el encargo, con todo
 el flujo del mapa entrando en la pared. Con una pintura selectiva tipo Pyromark
-sería 0,95, y basta cambiar el número: el efecto sobre el caso de referencia es
-bajar el rendimiento de 73,28 a 69,49~\% y la pared de 659 a 642~$^\circ$C.
+sería 0,95, y basta cambiar el número (tabla~\ref{tab:sensib}).
+
+$\lambda$ se explica en la sección~\ref{sec:mezcla}. Su valor por defecto no está
+calibrado: no hay dato publicado de cuánto se mezcla el flujo lateralmente en el
+canal interno de una pillow plate.
 
 \subsection{Conductividad del acero}
 \label{sec:kacero}
@@ -197,45 +221,33 @@ explicarse, porque el AISI~321 sí depende de ella: conduce unos 16~W/(m\,K) a
 metales, \emph{mejoran} al calentarse.
 
 Lo que permite congelarla es el peso que tiene la chapa en el circuito térmico.
-En el nodo de pared más caliente del caso de referencia:
+En el nodo de pared más caliente del caso de referencia ($T_w = 908{,}7$~K):
 
 \begin{center}
 \begin{tabular}{lrr}
   \toprule
   Resistencia & Valor [m$^2$K/W] & Fracción \\
   \midrule
-  Chapa, $e/K_{\mathrm{acero}}$   & $4{,}000\cdot10^{-5}$ & 2,92~\% \\
-  Película interna, $1/h_{int}$   & $1{,}328\cdot10^{-3}$ & 97,08~\% \\
+  Chapa, $e/K_{\mathrm{acero}}$   & $4{,}000\cdot10^{-5}$ & 2,86~\% \\
+  Película interna, $1/h_{int}$   & $1{,}356\cdot10^{-3}$ & 97,14~\% \\
   \midrule
-  Total                           & $1{,}368\cdot10^{-3}$ & 100~\% \\
+  Total                           & $1{,}396\cdot10^{-3}$ & 100~\% \\
   \bottomrule
 \end{tabular}
 \end{center}
 
-La chapa es el 2,9~\% de la resistencia: de los 184,4~K de salto entre pared y
-fluido, se lleva 5,4.
-
-\paragraph{De dónde sale el 20.} Sobre todos los casos de trabajo ensayados
+\paragraph{De dónde sale el 20.} Sobre los casos de trabajo ensayados en su día
 --- picos de 200 y 400~kW/m$^2$, entradas de 100 a 500~$^\circ$C, gastos de 0,3 a
 1,5~kg/s y los tres paneles --- la temperatura media de la chapa, $(T_w+T_f)/2$,
-se mueve entre 396 y 1078~K, es decir, $k$ entre 16,2 y 24,8~W/(m\,K), con media
+se movía entre 396 y 1078~K, es decir, $k$ entre 16,2 y 24,8~W/(m\,K), con media
 20,5. Se toma 20, que corresponde a unos 700~K de chapa, el centro del rango. Un
-20~\% de error en $k$ mueve la resistencia total un 0,5~\%.
+20~\% de error en $k$ mueve la resistencia total un 0,6~\%.
 
-\paragraph{Cuánto cuesta la simplificación.} Medido contra la versión con
-$k(T)$, sobre siete puntos de trabajo, la desviación nodal máxima es de 1,2~K, y
-se da en el caso más caliente, el de 400~kW/m$^2$ de pico. En el de referencia
-es de 0,34~K en la pared máxima, 0,02~K en la salida media y 0,009 puntos en el
-rendimiento. Para ponerlo en contexto: pasar $h_{\mathrm{ext}}$ de 20 a
-10~W/(m$^2$K), dentro de su propio rango de incertidumbre, mueve la pared 11~K.
-La dependencia de $k$ con $T$ estaba muy por debajo del ruido del modelo.
-
-\paragraph{Y además desacopla la bisección.} Ésta es la razón de fondo. Con
-$k = k(T)$ la resistencia dependía de $T_w$ --- la temperatura media de la chapa
-es $(T_w + T_f)/2$, y $T_w$ es justo la incógnita ---, así que había que
-reevaluarla en cada iteración de la bisección interna. Con $k$ constante la
-resistencia se calcula una vez por porción y sale del bucle
-(sección~\ref{sec:coste}).
+\paragraph{Y además desacopla la bisección.} Con $k = k(T)$ la resistencia
+dependía de $T_w$ --- la temperatura media de la chapa es $(T_w + T_f)/2$, y
+$T_w$ es justo la incógnita ---, así que había que reevaluarla en cada iteración
+de la bisección interna. Con $k$ constante la conductancia se calcula una vez
+por porción y sale del bucle (sección~\ref{sec:coste}).
 
 El límite de servicio continuo del AISI~321 está en torno a 1150~K
 (877~$^\circ$C). El módulo no lo impone: lo avisa en \texttt{resumen()}.
@@ -261,7 +273,7 @@ Bisección clásica, con dos detalles que merecen comentario.
 
 \paragraph{Exige que el intervalo encierre la raíz.} Evalúa $f(a)$ y $f(b)$ y
 lanza \texttt{ValueError} si tienen el mismo signo, en vez de devolver un
-resultado sin sentido. Quien llama es responsable de acotar bien, y las dos
+resultado sin sentido. Quien llama es responsable de acotar bien, y todas las
 llamadas del módulo lo hacen con argumentos físicos (sección~\ref{sec:porcion}).
 
 \paragraph{Una sola evaluación por iteración.} El bucle guarda \texttt{fa} y lo
@@ -280,17 +292,23 @@ Esto no es cosmético. Una versión que reevaluase $f$ para decidir el signo
 duplicaría el coste del módulo entero, porque $f$ es aquí una bisección anidada
 completa.
 
-\paragraph{Criterio de parada.} Sale cuando $b - a < 10^{-6}$~K, o al agotar las
-80 iteraciones. Con los intervalos que usa el módulo, de 300 a 1100~K de
-anchura, hacen falta $\log_2(10^9) \approx 30$ iteraciones, así que el tope de 80
-nunca se alcanza: es una red de seguridad, no el criterio real. La medida sobre
-el caso de referencia da 30,1 iteraciones de media.
+\paragraph{Criterio de parada.} Sale cuando $b - a$ baja de la tolerancia
+($10^{-6}$~K por defecto), o al agotar las 80 iteraciones. Con los intervalos que
+usa el balance, de 300 a 1100~K de anchura, hacen falta
+$\log_2(10^9) \approx 30$ iteraciones, así que el tope de 80 nunca se alcanza: es
+una red de seguridad, no el criterio real. La mezcla y la temperatura media de
+salida la llaman con $10^{-9}$~K, porque invierten la entalpía y ahí interesa
+que la conservación de la energía cierre a la precisión de la máquina.
 
 \section{La clase \texttt{Receptor}}
 
 Es un \texttt{dataclass} congelado (\texttt{frozen=True}): una vez construido no
 se puede modificar, lo que garantiza que los campos derivados que calcula el
-constructor siguen siendo coherentes con los de entrada.
+constructor siguen siendo coherentes con los de entrada. Para variar un
+parámetro se crea otro con \texttt{dataclasses.replace}, que vuelve a pasar por
+el constructor; así lo hace el barrido del bloque \texttt{\_\_main\_\_}. Del mismo
+modo se prueba una geometría distinta de las de la Tabla~1:
+\texttt{panel=replace(geom.PPHE1, s\_t=..., s\_2l=..., b\_i=..., d\_sp=...)}.
 
 \subsection{Campos}
 
@@ -302,53 +320,70 @@ constructor siguen siendo coherentes con los de entrada.
   \texttt{mapa}   & \texttt{MapaGaussiano} & --- & mapa de flujo incidente \\
   \texttt{G}      & float & --- & gasto másico total [kg/s] \\
   \texttt{T\_ent} & float & --- & entrada, uniforme [K] \\
-  \texttt{p}      & float & $10\cdot10^5$ & presión del aire [Pa] \\
-  \texttt{N}      & int   & 20 & porciones en altura \\
-  \texttt{M}      & int   & 10 & porciones en anchura \\
+  \texttt{p}      & float & $10\cdot10^5$ & presión a la entrada [Pa] \\
+  \texttt{lam}    & float & 0,70 & mezcla entre columnas, $\lambda$ \\
   \texttt{panel}  & obj   & \texttt{PPHE1} & geometría de la pillow plate \\
   \texttt{fluido} & obj   & \texttt{AIRE}  & fluido de trabajo \\
   \texttt{h\_ext} & float & 20,0 & convección exterior \\
   \texttt{eps}    & float & 0,85 & emisividad \\
   \texttt{alfa}   & float & 1,00 & absortividad \\
   \midrule
-  \texttt{n}       & obj   & \multicolumn{2}{l}{\emph{derivado}: constantes $n_1\ldots n_5$} \\
-  \texttt{seccion} & float & \multicolumn{2}{l}{\emph{derivado}: sección de paso [m$^2$]} \\
-  \texttt{de}      & float & \multicolumn{2}{l}{\emph{derivado}: diámetro equivalente [m]} \\
+  \texttt{M}, \texttt{N}    & int   & \multicolumn{2}{l}{\emph{derivados}: columnas y filas} \\
+  \texttt{n}                & obj   & \multicolumn{2}{l}{\emph{derivado}: constantes $n_1\ldots n_5$} \\
+  \texttt{seccion}          & float & \multicolumn{2}{l}{\emph{derivado}: sección de paso [m$^2$]} \\
+  \texttt{de}               & float & \multicolumn{2}{l}{\emph{derivado}: diámetro equivalente [m]} \\
+  \texttt{anchos}           & tupla & \multicolumn{2}{l}{\emph{derivado}: ancho de paso de cada columna [m]} \\
+  \texttt{frac\_soldadura}  & float & \multicolumn{2}{l}{\emph{derivado}: fracción de área de soldadura} \\
   \bottomrule
 \end{tabular}
 \end{center}
 
 \subsection{\texttt{\_\_post\_init\_\_}: lo que solo depende de la geometría}
 
-Los tres últimos campos llevan \texttt{field(init=False)}: no se pasan al
+Los campos derivados llevan \texttt{field(init=False)}: no se pasan al
 construir, los calcula \texttt{\_\_post\_init\_\_} una sola vez. Como la clase
 está congelada, hay que escribirlos con \texttt{object.\_\_setattr\_\_}, y de ahí
-la \texttt{lambda fijar} que hace ese rodeo legible.
+la \texttt{lambda fijar} que hace ese rodeo legible. Primero comprueba que
+$0 \le \lambda \le 1$, y después:
 
 \begin{align}
+  M,\ N &= \operatorname{round}(W/s_T),\ \operatorname{round}(L/s_L) \\
+  \varphi &= \frac{\pi d_{sp}^2/4}{s_T\,s_L} \\
   n_1 \ldots n_5 &= \texttt{asignacion\_de\_constantes}(s_T,\, 2s_L,\, d_{sp},\, b_i) \\
-  A_{\mathrm{paso}} &= \frac{b_i}{\sqrt{2}}\,W && \text{ec.\ (16)} \\
+  f_{ch} &= \frac{b_i}{\sqrt{2}}\,(W - 2w_e)\Big|_{w_e = 0} = \frac{b_i}{\sqrt{2}}\,W && \text{ec.\ (16)} \\
   d_{e,I} &= 2\,\frac{b_i}{\sqrt{2}} && \text{ec.\ (14)}
 \end{align}
 
-Sobre la sección de paso hay que hacer una advertencia: se calcula con la
-anchura \emph{de la placa}, \texttt{self.mapa.W}, y no con la anchura útil del
-panel $w_{pp} - 2w_e$ que usa \texttt{formulas.f\_chI}. Es decir, se supone que
-el canal ocupa toda la anchura del receptor y se desprecian las soldaduras de
-borde. Es coherente con el resto del modelo, que trata la placa como una única
-pillow plate de $L\times W$, pero no es lo mismo que apilar paneles de
-$w_{pp} = 300$~mm.
+La asignación de constantes se hace en el constructor, de modo que una geometría
+fuera de las correlaciones publicadas falla al crear el objeto y no a mitad del
+cálculo.
 
-Nótese también que la asignación de constantes se hace en el constructor, de modo
-que una geometría fuera de las correlaciones publicadas falla al crear el objeto
-y no a mitad del cálculo.
+\subsection{La sección de paso, sin soldaduras de borde}
+
+La sección es la de la ecuación~(16) de Arsenyeva, con el ancho de la placa en
+el papel de $w_{pp}$ y \emph{sin soldaduras de borde}, $w_e = 0$: la placa del
+receptor se trata como un campo de celdas de soldadura que la cubre entera. Con
+PPHE1, $f_{ch} = 3{,}4/\sqrt{2}\times1500~\mathrm{mm^2} = 36{,}06$~cm$^2$.
+
+Una versión anterior sí las tenía en cuenta ($w_e = 15$~mm): descontaba $w_e$
+del ancho de paso y del área de intercambio de las dos columnas de los extremos,
+y les daba un gasto proporcional a su ancho de paso. El resultado era un
+repunte espurio en el perfil de salida: esas columnas llevaban menos aire pero
+recibían el flujo de toda su anchura, porque el modelo supone la chapa a la
+misma temperatura en toda la porción, y todo el calor de la franja soldada iba a
+parar a ese aire. Con celdas pequeñas el efecto dominaba; con $s_T = 42$~mm y
+$\lambda = 1$, la columna de borde salía a 417~$^\circ$C frente a los 395 de la
+segunda. En realidad esa franja, 15~mm de acero sin aire detrás, se calentaría
+del orden de 200~K por encima del canal y perdería buena parte de su calor por
+radiación. Sin soldaduras de borde el perfil baja de forma continua hacia el
+borde (384, 397 y 411~$^\circ$C en las tres primeras columnas del mismo caso).
 
 \subsection{\texttt{h\_interno(T)}: la cadena termohidráulica}
 
 Devuelve la terna $(h, u, Re)$, siguiendo la misma cadena que
 \texttt{modelo\_f3.py} del otro paquete:
 \begin{align}
-  u  &= \frac{G}{\rho(T,p)\,A_{\mathrm{paso}}}  && \text{ec.\ (3)} \\
+  u  &= \frac{G}{\rho(T,p)\,f_{ch}}             && \text{ec.\ (3)} \\
   Re &= \frac{\rho\,u\,d_{e,I}}{\mu}            && \\
   Nu &= n_3\,Re^{\,n_4}\,Pr^{\,n_5}             && \text{ec.\ (20)} \\
   h  &= \frac{Nu\,k}{d_{e,I}}                   &&
@@ -357,22 +392,45 @@ Devuelve la terna $(h, u, Re)$, siguiendo la misma cadena que
 La diferencia con \texttt{modelo\_f3} es que aquí las propiedades \emph{no} son
 constantes: se piden a \texttt{props\_fluido} a la temperatura que se le pase, y
 el módulo la llama en cada porción con la temperatura media del fluido de esa
-porción. En el caso de referencia, $h$ pasa de 700 a 772~W/(m$^2$K) de abajo
+porción. En el caso de referencia, $h$ pasa de 700 a 755~W/(m$^2$K) de abajo
 arriba de la columna central.
 
-\paragraph{Por qué $h$ no depende de $M$.} El gasto de una columna,
-$G_{\mathrm{col}} = G/M$, y su sección de paso, $A_{\mathrm{paso}}/M$, son ambos
-proporcionales a $\Delta x$, así que el cociente se cancela y la velocidad es la
-misma con cualquier $M$. Por eso \texttt{h\_interno} usa el gasto \emph{total} y
-la sección \emph{total}, sin dividir por $M$: es el mismo número. La consecuencia
-práctica es que afinar la malla cambia la resolución del mapa, no la física del
-canal.
+\paragraph{Por qué basta el gasto y la sección totales.} Todas las columnas
+llevan $G/M$ y tienen sección $f_{ch}/M$, así que la velocidad de una columna es
+la de la placa entera. \texttt{h\_interno} usa por eso el gasto \emph{total} y la
+sección \emph{total}: es el mismo número.
+
+\paragraph{El cálculo térmico no ve la presión.} $Re = G''\,d_{e,I}/\mu$, con
+$G'' = G/f_{ch}$ el gasto por unidad de sección, no depende de $\rho$, y $c_p$,
+$k$ y $\mu$ son los del límite de gas diluido. Ni $Nu$ ni $h$ dependen, pues, de
+$p$: la presión solo entra en la velocidad que se informa y en la pérdida de
+carga (sección~\ref{sec:dp}). Se ha comprobado: a 5 y a 10~bar el rendimiento
+coincide en todas las cifras.
 
 \section{El balance de una porción: \texttt{\_porcion}}
 \label{sec:porcion}
 
-Es el corazón del módulo. Resuelve una sola porción y devuelve
-$(T_{\mathrm{sal}}, T_w, q_{\mathrm{fluido}})$.
+Es el corazón del módulo. Resuelve una sola porción con sus columnas
+\emph{adiabáticas} --- la mezcla se aplica después, a la fila entera --- y
+devuelve $(T_{\mathrm{sal}}, T_w, q_{\mathrm{fluido}})$.
+
+\subsection{Dos áreas: la que recibe y la que cede}
+\label{sec:soldaduras}
+
+La porción tiene dos áreas distintas:
+\begin{itemize}
+  \item $A = \Delta x\,\Delta y$: la que recibe el flujo y pierde calor por
+        convección y radiación. La cara expuesta es toda la chapa, soldadura
+        incluida.
+  \item $A_f = \Delta x\,\Delta y\,(1 - \varphi)$: la que cede calor al fluido,
+        que descuenta el punto de soldadura de la celda porque no tiene aire
+        detrás.
+\end{itemize}
+Con PPHE1, $\varphi = \pi\,(7{,}2~\mathrm{mm})^2/4\,/\,(72\times21~\mathrm{mm^2})
+= 2{,}69~\%$. Se supone la chapa a la misma $T_w$ en toda la porción: el calor
+que cae sobre el punto de soldadura llega al fluido por conducción lateral a
+través de la chapa que lo rodea, a pocos milímetros. Lo que se pierde es
+superficie de intercambio, no calor incidente.
 
 \subsection{Las tres ecuaciones}
 
@@ -381,7 +439,7 @@ absorbe $q_{\mathrm{abs}} = \alpha\,q_{\mathrm{inc}}$. La pared, a $T_w$, pierde
 al ambiente y al cielo, y lo que queda atraviesa la chapa y pasa al fluido:
 \begin{align}
   q_{\mathrm{abs}} &= q_{\mathrm{perd}}(T_w) + q_{\mathrm{fluido}}, \label{eq:bal}\\[2pt]
-  q_{\mathrm{fluido}} &= \frac{A\,(T_w - T_f)}
+  q_{\mathrm{fluido}} &= \frac{A_f\,(T_w - T_f)}
        {\dfrac{e}{K_{\mathrm{acero}}} + \dfrac{1}{h_{\mathrm{int}}(T_f)}},
   \qquad T_f = \tfrac{1}{2}\left(T_{\mathrm{ent}} + T_{\mathrm{sal}}\right), \label{eq:cond}\\[2pt]
   q_{\mathrm{fluido}} &= G_{\mathrm{col}}\left[h(T_{\mathrm{sal}}) - h(T_{\mathrm{ent}})\right].
@@ -390,47 +448,35 @@ al ambiente y al cielo, y lo que queda atraviesa la chapa y pasa al fluido:
 
 Dos incógnitas, $T_w$ y $T_{\mathrm{sal}}$, y dos no linealidades: el $T_w^4$ de
 la radiación y la dependencia de las propiedades del fluido con $T_f$. La
-conductividad del acero es constante (sección~\ref{sec:kacero}), de modo que el
-denominador de \eqref{eq:cond} no depende de $T_w$ y se evalúa una sola vez por
-porción, fuera de la bisección interna.
+conductividad del acero es constante (sección~\ref{sec:kacero}), de modo que la
+conductancia $UA = A_f/(e/K_{\mathrm{acero}} + 1/h_{\mathrm{int}})$ no depende de
+$T_w$ y se evalúa una sola vez por cada $T_{\mathrm{sal}}$ de prueba, fuera de la
+bisección interna.
 
 \paragraph{Por qué entalpías y no $c_p\,\Delta T$.} La ecuación~\eqref{eq:ent}
 usa la integral analítica del polinomio de $c_p$ que trae
 \texttt{props\_fluido}. Entre 300 y 1200~K el $c_p$ del aire sube un 17~\%, así
 que cerrar el balance con el $c_p$ de la entrada se dejaría un 7,4~\% del calor
-absorbido por el camino. Con saltos de 200 a 400~K por columna, eso no es un
-detalle.
-
-\paragraph{La temperatura de película.} El fluido de una porción se caracteriza
-por su temperatura \emph{media} $T_f = (T_{\mathrm{ent}} + T_{\mathrm{sal}})/2$,
-y la chapa por la media entre pared y fluido, $(T_w + T_f)/2$. Son las dos
-medias aritméticas habituales, y son las que hacen que las ecuaciones sean
-implícitas: $T_f$ depende de $T_{\mathrm{sal}}$, que es lo que se busca.
+absorbido por el camino.
 
 \subsection{La estructura: bisección anidada}
 
 \begin{verbatim}
-    _porcion(q_inc, T_ent, G_col, A)
+    _porcion(q_inc, T_ent, G_col, A, A_f)
       |
       +-- biseccion EXTERNA sobre T_sal, en [T_min_fluido, T_max]
       |     f = desequilibrio(T_sal) = q_fluido(T_sal) - G_col*[h(T_sal)-h(T_ent)]
       |     |
       |     +-- cerrar(T_sal):
-      |           T_f = (T_ent + T_sal)/2
+      |           T_f   = (T_ent + T_sal)/2
       |           h_int = h_interno(T_f)
-      |           R     = e/K_ACERO + 1/h_int     # constante dentro del bucle
+      |           UA    = A_f/(e/K_ACERO + 1/h_int)   # constante dentro del bucle
       |           |
       |           +-- biseccion INTERNA sobre T_w, en [T_cielo, T_w_max]
-      |                 f = balance_pared(T_w) = q_abs - perdidas(T_w) - conduccion(T_w)
+      |                 f = q_abs - perdidas(T_w, A) - UA*(T_w - T_f)
       |
       +-- cerrar(T_sal_final) una ultima vez, para devolver T_w y q
 \end{verbatim}
-
-Para cada $T_{\mathrm{sal}}$ de prueba se fija $T_f$, con él se calcula
-$h_{\mathrm{int}}$, se despeja $T_w$ de la ecuación~\eqref{eq:bal} con
-\eqref{eq:cond} sustituida, y con ese $T_w$ se obtiene el calor al fluido. Ese
-calor se compara con el salto de entalpía \eqref{eq:ent}, y el desequilibrio es
-la función que anula la bisección externa.
 
 \subsection{El intervalo de la bisección interna, sobre $T_w$}
 
@@ -439,8 +485,6 @@ la función que anula la bisección externa.
   \max\Bigl(T_f,\ \bigl(\tfrac{q_{\mathrm{abs}}}{A\,\varepsilon\,\sigma} + T_{\mathrm{cielo}}^4\bigr)^{1/4}\Bigr) + 1\;\Bigr]
 \]
 
-Los dos extremos tienen lectura física:
-
 \begin{itemize}
   \item \textbf{Extremo inferior.} A $T_w = T_{\mathrm{cielo}}$ la radiación neta
         es nula y la pared, más fría que el fluido, recibe calor por los dos
@@ -448,14 +492,12 @@ Los dos extremos tienen lectura física:
   \item \textbf{Extremo superior.} Es la temperatura a la que \emph{solo} la
         radiación ya evacúa todo el flujo absorbido. Como además hay convección
         y conducción al fluido, el balance allí es necesariamente negativo. El
-        \texttt{max} con $T_f$ cubre el caso de flujo casi nulo, en que la
-        expresión de la radiación daría un valor por debajo del fluido, y el
-        $+1$ evita el intervalo degenerado cuando los dos extremos coinciden.
+        \texttt{max} con $T_f$ cubre el caso de flujo casi nulo, y el $+1$
+        evita el intervalo degenerado cuando los dos extremos coinciden.
 \end{itemize}
 
-En el caso de referencia, el intervalo de la celda más caliente es
-$[300{,}6;\ 1422{,}3]$~K, 1121,7~K de anchura, que con tolerancia $10^{-6}$~K
-pide 30,1 iteraciones.
+En el caso de referencia, el intervalo de la celda más caliente
+($q'' = 193{,}5$~kW/m$^2$) es $[300{,}6;\ 1417{,}2]$~K.
 
 \subsection{El intervalo de la bisección externa, sobre $T_{\mathrm{sal}}$}
 
@@ -469,291 +511,318 @@ ninguna pérdida, y lo evalúa con el $c_p$ de la entrada, que es el menor del
 tramo. Como el $c_p$ del aire crece con la temperatura, la temperatura real
 queda necesariamente por debajo: la cota es rigurosa. El \texttt{min} con
 $T_{\max}^{\mathrm{fluido}} = 1600$~K impide pedir a \texttt{props\_fluido} una
-temperatura fuera de su rango de ajuste.
-
-El extremo inferior son los 250~K del ajuste, no $T_{\mathrm{ent}}$. Es
-deliberado: permite que el fluido se \emph{enfríe} en una porción, cosa que pasa
-de verdad cuando el flujo incidente es pequeño y el aire entra caliente.
+temperatura fuera de su rango de ajuste. El extremo inferior son los 250~K del
+ajuste, no $T_{\mathrm{ent}}$: permite que el fluido se \emph{enfríe} en una
+porción, cosa que pasa de verdad cuando el flujo incidente es pequeño y el aire
+entra caliente.
 
 \paragraph{La comprobación previa.} Antes de bisecar, el código evalúa
 \texttt{desequilibrio(T\_max)} y, si sale positivo, lanza \texttt{ValueError}
-con un mensaje legible en vez de dejar que \texttt{\_biseccion} falle con su
-error genérico. Un desequilibrio positivo en el extremo superior significa que
-ni siquiera a 1600~K el fluido absorbe lo que le llega: el punto de trabajo no
-existe, y el consejo del mensaje --- subir el gasto o bajar el flujo --- es el
-correcto.
+con un mensaje legible: ni siquiera a 1600~K el fluido absorbe lo que le llega,
+y el punto de trabajo no existe.
 
 \subsection{Por qué bisección y no Newton}
 
-Newton convergería en tres o cuatro iteraciones en vez de treinta, pero:
+Newton convergería en tres o cuatro iteraciones en vez de treinta, pero habría
+que derivar el balance --- la derivada incluye la de $h_{\mathrm{int}}$ con la
+temperatura y la del polinomio de entalpía ---, puede divergir, y aquí se ejecuta
+dentro de un bucle de más de mil porciones sin nadie mirando. La bisección
+converge siempre que el intervalo encierre la raíz, y los dos intervalos se han
+acotado con argumentos físicos que lo garantizan (salvo el caso de la
+sección~\ref{sec:fallo}).
 
-\begin{itemize}
-  \item habría que derivar el balance, y la derivada incluye la de
-        $k_{\mathrm{acero}}$, la de $h_{\mathrm{int}}$ con la temperatura y la
-        del polinomio de entalpía;
-  \item puede divergir, y aquí se ejecuta dentro de un bucle de cientos de
-        porciones sin nadie mirando;
-  \item el coste no es el cuello de botella con mallas de este tamaño.
-\end{itemize}
-
-La bisección, en cambio, converge siempre que el intervalo encierre la raíz, y
-los dos intervalos se han acotado con argumentos físicos que lo garantizan
-(salvo el caso de la sección~\ref{sec:fallo}).
-
-\subsection{Coste: recuento de evaluaciones}
+\subsection{Coste}
 \label{sec:coste}
 
-Medido sobre el caso de referencia, malla $10\times20$, instrumentando
+Medido sobre el caso de referencia, $21\times71$ porciones, instrumentando
 \texttt{\_biseccion}:
 
 \begin{center}
 \begin{tabular}{lr}
   \toprule
-  Porciones                                  & 200 \\
-  Bisecciones totales                        & 6\,820 \\
-  Bisecciones por porción                    & 34,1 \\
-  Iteraciones por bisección                  & 30,1 \\
-  Evaluaciones de \texttt{balance\_pared}    & 218\,852 \\
-  Evaluaciones por porción                   & 1\,094 \\
+  Porciones                                  & 1\,491 \\
+  Bisecciones totales                        & 52\,185 \\
+  Bisecciones por porción                    & 35,0 \\
+  Evaluaciones de función                    & 1\,679\,154 \\
+  Evaluaciones por porción                   & 1\,126 \\
+  Tiempo                                     & 1,1~s \\
   \bottomrule
 \end{tabular}
 \end{center}
 
-Las 34 bisecciones internas por porción se reparten así: 32 de la bisección
-externa (30 iteraciones más las 2 evaluaciones del chequeo de signo), 1 de la
-comprobación previa de \texttt{T\_max} y 1 de la llamada final a
-\texttt{cerrar}. Cada una de ellas cuesta a su vez unas 32 evaluaciones del
-balance de pared, de donde salen los $\sim$1100 por porción.
+Por porción hay 34 bisecciones internas --- 32 de la bisección externa, 1 de la
+comprobación previa de \texttt{T\_max} y 1 de la llamada final a \texttt{cerrar}
+--- más la externa, y cada una cuesta unas 32 evaluaciones. El coste es lineal
+en el número de porciones, y la mezcla y la pérdida de carga apenas añaden. Para
+que eso se note poco, \texttt{\_porcion} saca a variables locales todo lo que
+necesita del objeto antes de definir las funciones internas.
 
-\paragraph{Optimizaciones presentes.} \texttt{\_porcion} saca a variables
-locales todo lo que necesita del objeto --- \texttt{fluido}, \texttt{e},
-\texttt{h\_ext}, \texttt{eps}, \texttt{h\_interno} --- antes de definir las
-funciones internas. Con 200\,000 evaluaciones por placa, cada acceso a atributo
-que se evita se nota.
+\section{La mezcla entre columnas: el factor \texorpdfstring{$\lambda$}{lambda}}
+\label{sec:mezcla}
 
-En la misma línea, la resistencia térmica se calcula una vez por llamada a
-\texttt{cerrar} y no dentro de \texttt{balance\_pared}, cosa que solo es posible
-porque $K_{\mathrm{acero}}$ es constante. El recuento de evaluaciones no cambia
-por ello --- siguen siendo 218\,852 ---: lo que baja es el coste de cada una, y con
-él un 18~\% el tiempo total.
+\subsection{Formulación}
+
+Cada fila se resuelve primero con las columnas adiabáticas entre sí, lo que da
+una entalpía de salida $h_{ad,i}$ por columna. La mezcla completa es la que deja
+toda la fila a la entalpía media ponderada por gasto:
+\[
+  h_{\mathrm{mez}} = \frac{\sum_i G_i\,h_{ad,i}}{\sum_i G_i}.
+\]
+La salida de la fila, que es la entrada de la siguiente, pondera los dos:
+\[
+  h_{\mathrm{sal},i} = \lambda\,h_{ad,i} + (1 - \lambda)\,h_{\mathrm{mez}},
+\]
+con $\lambda = 1$ columnas adiabáticas y $\lambda = 0$ mezcla completa en cada
+fila. Se pondera la entalpía y no la temperatura porque así la mezcla conserva la
+energía para cualquier $\lambda$: la media ponderada de las $h_{\mathrm{sal},i}$
+es exactamente $h_{\mathrm{mez}}$. Con $c_p$ constante las dos cosas
+coincidirían. Lo hace \texttt{\_mezclar}, que recupera cada temperatura por
+bisección sobre la entalpía, en el intervalo de las temperaturas adiabáticas de
+la fila ensanchado 1~K.
+
+Se ha comprobado que el balance global cierra: el calor sumado porción a porción,
+el salto de entalpía de la salida y la potencia incidente menos las pérdidas
+coinciden a menos de 1~mW sobre 173~kW con cualquier $\lambda$.
+
+\subsection{El efecto se compone fila a fila}
+
+$\lambda$ se aplica en \emph{cada} fila, y la diferencia entre columnas creada en
+una fila queda multiplicada por $\lambda$ en cada una de las siguientes. Con 71
+filas, valores que parecen moderados borran el perfil (tabla~\ref{tab:lambda}).
+
+\begin{table}[h]
+\centering
+\begin{tabular}{rrrrrrr}
+  \toprule
+  $\lambda$ & $\eta$ [\%] & $T_{\mathrm{sal}}^{\max}$ [$^\circ$C]
+  & $T_{\mathrm{sal}}^{\min}$ [$^\circ$C] & dispersión [K] & frente a $\lambda=1$
+  & $T_w^{\max}$ [$^\circ$C] \\
+  \midrule
+  1,00 & 72,99 & 547,8 & 383,9 & 163,9 & 100~\% & 667,8 \\
+  0,99 & 73,07 & 528,5 & 411,9 & 116,6 &  71~\% & 662,0 \\
+  0,97 & 73,16 & 506,9 & 442,7 &  64,2 &  39~\% & 654,0 \\
+  0,95 & 73,20 & 496,6 & 457,3 &  39,3 &  24~\% & 648,9 \\
+  0,90 & 73,25 & 487,0 & 470,7 &  16,3 &  10~\% & 642,1 \\
+  0,80 & 73,28 & 482,6 & 476,7 &   6,0 &   4~\% & 637,3 \\
+  0,70 & 73,30 & 481,5 & 478,3 &   3,2 &   2~\% & 635,6 \\
+  0,50 & 73,30 & 480,7 & 479,4 &   1,3 &   1~\% & 634,1 \\
+  0,00 & 73,31 & 480,1 & 480,1 &   0,0 &   0~\% & 633,1 \\
+  \bottomrule
+\end{tabular}
+\caption{Sensibilidad a $\lambda$ del caso de referencia. La temperatura de
+mezcla a la salida es 480~$^\circ$C en todos los casos.}
+\label{tab:lambda}
+\end{table}
+
+Consecuencias:
+\begin{itemize}
+  \item La zona útil de $\lambda$ está entre 0,9 y 1. Por debajo de 0,9 el
+        perfil de salida queda plano a menos de 16~K; con el 0,7 por defecto,
+        a 3~K.
+  \item $\lambda$ no es una propiedad solo del canal: depende de cuántas filas
+        haya, y eso lo fija $s_L$. Como aquí la fila es la celda del patrón de
+        soldaduras, $\lambda$ se lee como la mezcla que produce cada hilera de
+        puntos, que es donde el flujo se desvía de lado; al comparar paneles
+        distintos hay que tenerlo presente.
+  \item Sobre el rendimiento el efecto es pequeño, 0,32 puntos entre los
+        extremos: mezclar homogeneiza la pared, y la pared más fría pierde algo
+        menos por radiación. Sobre la pared máxima es de 35~K, y sobre el perfil
+        de salida, que es lo que se pedía al modelo, lo es todo.
+\end{itemize}
+
+\section{La pérdida de carga}
+\label{sec:dp}
+
+\subsection{Formulación}
+
+Es la ecuación~(19) de Arsenyeva, integrada fila a fila porque aquí las
+propiedades varían con la temperatura, más el término de aceleración que la (19)
+no lleva porque el artículo trabaja con líquidos a propiedades constantes:
+\[
+  \Delta p = \underbrace{\sum_j f_j\,\frac{\Delta y}{d_{e,I}}\,\frac{G''^2}{2\rho_j}}_{\text{fricción}}
+  + \underbrace{\frac{\zeta_{DZ}}{2}\,G''^2\left(\frac{1}{\rho_{\mathrm{ent}}}
+    + \frac{1}{\rho_{\mathrm{sal}}}\right)}_{\text{zonas de distribución}}
+  + \underbrace{G''^2\left(\frac{1}{\rho_{\mathrm{sal}}}
+    - \frac{1}{\rho_{\mathrm{ent}}}\right)}_{\text{aceleración}},
+\]
+con $G'' = G/f_{ch}$, igual en toda la placa, $f_j = n_1 Re_j^{\,n_2}$ de la
+ecuación~(18) a la temperatura media de la porción, y $\zeta_{DZ} = 1{,}5$
+repartido a medias entre la zona de distribución de entrada y la de salida.
+
+\subsection{Presión local}
+
+\texttt{\_perdida\_carga} recorre cada columna de abajo arriba bajando la
+presión fila a fila, y evalúa cada densidad a la presión local; \texttt{friccion}
+recibe por eso la presión como argumento. Con la pérdida del orden del 11~\% de
+la presión de entrada, tomarla constante daba un 5~\% menos de fricción. Se
+calcula \emph{después} del cálculo térmico, que no depende de la presión. Si la
+presión se agota antes de la salida, lanza \texttt{ValueError} en vez de
+devolver densidades negativas.
+
+Se obtiene una pérdida por columna, y el \texttt{Resultado} da la media ponderada
+por gasto. En el caso de referencia:
+
+\begin{center}
+\begin{tabular}{lr}
+  \toprule
+  Término & $\Delta p$ [kPa] \\
+  \midrule
+  Fricción                & 87,65 \\
+  Zonas de distribución   & 18,91 \\
+  Aceleración             &  4,72 \\
+  \midrule
+  \textbf{Total}          & \textbf{111,28} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+Entre columnas solo varía entre 110,60 y 111,78~kPa, de modo que el reparto de
+gasto uniforme no está lejos del que impondrían unos colectores comunes.
 
 \section{El recorrido de la placa: \texttt{resolver}}
 
 \begin{verbatim}
     A     = (W/M) * (L/N)
-    G_col = G / M
-    flujo = mapa.mapa_nodal(M, N)      # [W/m2] medio de cada celda
+    G_col = G/M en cada columna,  A_f = A*(1 - phi)
+    flujo = mapa.mapa_nodal(M, N)          # [W/m2] medio de cada celda
+    T     = [T_ent] * M
 
-    para cada columna i:
-        T = T_ent                      # entrada uniforme
-        para cada fila j, de abajo arriba:
-            T, T_w, q = porcion(flujo[j][i] * A, T, G_col, A)
-            T_fluido[j][i] = T         # la salida de esta es la entrada de la de encima
-            T_pared[j][i]  = T_w
+    para cada fila j, de abajo arriba:
+        para cada columna i:
+            T_ad[i], T_w[i], q = porcion(flujo[j][i]*A, T[i], G_col[i], A, A_f[i])
             q_util += q
+        T = mezclar(T_ad)                  # entrada de la fila de encima
+        T_fluido[j], T_pared[j] = T, T_w
+
+    perdida_carga(T_fluido)                # despues, con la presion local
 \end{verbatim}
 
-El bucle exterior recorre columnas y el interior filas, en ese orden, porque el
-acoplamiento es \emph{vertical}: la temperatura se arrastra hacia arriba dentro
-de una columna, y no hay nada que arrastrar entre columnas. Es un barrido
-explícito, sin iteración global: cada porción se resuelve una vez y su resultado
-es definitivo.
+El bucle exterior recorre filas y el interior columnas, porque la mezcla acopla
+las columnas de una misma fila. Es un barrido explícito, sin iteración global:
+cada fila se resuelve una vez y su resultado es definitivo.
 
 El flujo nodal viene de \texttt{mapa.mapa\_nodal(M, N)}, que \emph{integra} la
 gaussiana dentro de cada celda con la función error en vez de muestrearla en su
 centro. Eso hace que $\sum q''_{ij}\,A$ reproduzca exactamente la potencia total
-sobre la placa, y es lo que permite que el balance global cierre con mallas
-bastas.
+sobre la placa.
 
-\section{La clase \texttt{Resultado}}
-
-Contenedor congelado con las dos matrices, el calor útil y una referencia al
-receptor que lo produjo.
+\section{La clase \texttt{Resultado} y la tabla}
 
 \begin{center}
 \begin{tabular}{lll}
   \toprule
   Miembro & Tipo & Qué da \\
   \midrule
-  \texttt{T\_fluido[j][i]} & matriz & salida de cada porción [K] \\
+  \texttt{T\_fluido[j][i]} & matriz & salida de cada porción, ya mezclada [K] \\
   \texttt{T\_pared[j][i]}  & matriz & temperatura de pared [K] \\
   \texttt{q\_util}         & float  & calor total al fluido [W] \\
+  \texttt{G\_col}          & lista  & gasto de cada columna [kg/s] \\
+  \texttt{dp\_friccion}, \texttt{dp\_distribucion}, \texttt{dp\_aceleracion} & listas & pérdida de cada columna, por término [Pa] \\
   \texttt{perfil\_salida}  & prop.  & \texttt{T\_fluido[-1]}, el perfil en $y=L$ \\
+  \texttt{T\_salida\_media}& prop.  & temperatura de mezcla a la salida, por entalpía [K] \\
   \texttt{x\_centros}      & prop.  & $x$ del centro de cada columna [m] \\
   \texttt{T\_pared\_max}   & prop.  & máximo de la matriz de pared [K] \\
+  \texttt{dp\_columnas}    & prop.  & pérdida total de cada columna [Pa] \\
+  \texttt{perdida\_carga}  & prop.  & media ponderada por gasto [Pa] \\
   \texttt{rendimiento}     & prop.  & \texttt{q\_util} / potencia incidente \\
-  \texttt{resumen()}       & método & imprime el balance y el perfil \\
+  \texttt{resumen()}       & método & imprime el balance, la pérdida de carga y el perfil \\
   \texttt{dibujar()}       & método & campo de fluido y perfil, con matplotlib \\
   \bottomrule
 \end{tabular}
 \end{center}
 
-\texttt{resumen()} recalcula $h$, $u$ y $Re$ a la temperatura media entre la
-entrada y la media del perfil de salida, solo para informar, y marca con un aviso
-explícito si la pared pasa de 1150~K.
+\texttt{resumen()} informa de la malla, la fracción de soldadura, la sección, $u$,
+$Re$ y $h$ a la temperatura media del fluido, el balance, el desglose de la
+pérdida de carga y su dispersión entre columnas, y marca con un aviso explícito
+si la pared pasa de 1150~K.
 
 \texttt{dibujar()} saca dos paneles: el campo de temperatura del fluido con
-\texttt{imshow}, escala \texttt{hot}, \texttt{origin="lower"} y
-\texttt{interpolation="nearest"} --- sin interpolar, para que la discretización se
-vea ---, y el perfil de salida. Importa matplotlib dentro de la función y avisa sin
-romper si no está instalado, de modo que el módulo corre en un entorno sin
-gráficos.
+\texttt{imshow} sin interpolar, para que la discretización se vea, y el perfil
+de salida. Importa matplotlib dentro de la función y avisa sin romper si no está
+instalado.
+
+La función de módulo \texttt{tabla(resultados)} imprime, para una lista de
+resultados, la temperatura de entrada, la pérdida de carga, el calor absorbido
+por el fluido y el rendimiento. Es lo primero que sale al ejecutar el script.
 
 \section{Comportamiento numérico}
 
-\subsection{Convergencia de malla}
+\subsection{Resolución de la malla}
 
-\begin{table}[h]
-\centering
-\begin{tabular}{lrrrrr}
-  \toprule
-  $M\times N$ & $Q_{\mathrm{útil}}$ [kW] & $\eta$ [\%] & $\bar{T}_{\mathrm{sal}}$ [$^\circ$C]
-    & $T_{\mathrm{sal}}^{\max}$ [$^\circ$C] & $T_w^{\max}$ [$^\circ$C] \\
-  \midrule
-  $5\times10$  & 115,3038 & 73,344 & 479,944 & 545,57 & 658,09 \\
-  $10\times20$ & 115,1887 & 73,270 & 479,728 & 545,51 & 659,35 \\
-  $20\times40$ & 115,1596 & 73,252 & 479,674 & 548,11 & 663,18 \\
-  $40\times80$ & 115,1523 & 73,247 & 479,660 & 548,77 & 664,25 \\
-  \bottomrule
-\end{tabular}
-\caption{Independencia de malla del caso de referencia.}
-\label{tab:malla}
-\end{table}
-
-Las magnitudes integrales convergen muy deprisa: de $5\times10$ a $40\times80$ el
-rendimiento se mueve 0,10 puntos y la temperatura media de salida, 0,28~K. Los
-\emph{picos} convergen más despacio --- la pared máxima sube 6,1~K --- porque una
-malla basta promedia la cresta de la campana dentro de una celda y rebaja el
-punto caliente. Con $10\times20$ ya se está a 5~K del valor convergido de la
-pared, y esa es la razón de que sea la malla por defecto.
-
-\subsection{Coste computacional}
-
-\begin{center}
-\begin{tabular}{lrr}
-  \toprule
-  Malla & Porciones & Tiempo [s] \\
-  \midrule
-  $5\times10$  &    50 & 0,03 \\
-  $10\times20$ &   200 & 0,13 \\
-  $20\times40$ &   800 & 0,51 \\
-  $40\times80$ & 3\,200 & 2,07 \\
-  \bottomrule
-\end{tabular}
-\end{center}
-
-El coste es lineal en el número de porciones, como cabe esperar de un barrido
-explícito en el que cada porción cuesta lo mismo: unas 1100 evaluaciones del
-balance de pared.
+La malla ya no es libre, así que no hay un estudio de convergencia que hacer
+sobre ella: afinarla cambiaría el número de puntos de soldadura por metro, es
+decir, la geometría. Como referencia, en la versión anterior del modelo, con la
+malla libre, el rendimiento y la temperatura media de salida estaban
+convergidos a 0,1 puntos y 0,3~K desde $5\times10$, y la pared máxima quedaba a
+1~K del valor convergido con $20\times40$. La malla de $21\times71$ es más fina
+que esa en las dos direcciones.
 
 \subsection{Sensibilidad a los parámetros inciertos}
 
-\begin{center}
+\begin{table}[h]
+\centering
 \begin{tabular}{lrrr}
   \toprule
   & $\eta$ [\%] & $T_w^{\max}$ [$^\circ$C] & $\bar{T}_{\mathrm{sal}}$ [$^\circ$C] \\
   \midrule
-  $h_{\mathrm{ext}} = 10$              & 76,83 & 670,8 & 488,3 \\
-  $h_{\mathrm{ext}} = 20$ \emph{(base)}& 73,27 & 659,3 & 479,7 \\
-  $h_{\mathrm{ext}} = 30$              & 69,83 & 648,1 & 471,4 \\
+  $h_{\mathrm{ext}} = 10$              & 76,87 & 646,5 & 488,7 \\
+  $h_{\mathrm{ext}} = 20$ \emph{(base)}& 73,30 & 635,6 & 480,1 \\
+  $h_{\mathrm{ext}} = 30$              & 69,83 & 624,9 & 471,8 \\
   \midrule
-  $\varepsilon = 0{,}70$               & 75,73 & 670,1 & 485,6 \\
-  $\varepsilon = 0{,}85$ \emph{(base)} & 73,27 & 659,3 & 479,7 \\
-  $\varepsilon = 1{,}00$               & 70,97 & 649,3 & 474,2 \\
+  $\varepsilon = 0{,}70$               & 75,75 & 644,9 & 486,0 \\
+  $\varepsilon = 0{,}85$ \emph{(base)} & 73,30 & 635,6 & 480,1 \\
+  $\varepsilon = 1{,}00$               & 70,99 & 626,9 & 474,6 \\
   \midrule
-  $\alpha = 0{,}95$ (Pyromark)         & 69,48 & 642,7 & 470,6 \\
-  $\alpha = 1{,}00$ \emph{(base)}      & 73,27 & 659,3 & 479,7 \\
+  $\alpha = 0{,}95$ (Pyromark)         & 69,50 & 619,6 & 470,9 \\
+  $\alpha = 1{,}00$ \emph{(base)}      & 73,30 & 635,6 & 480,1 \\
   \bottomrule
 \end{tabular}
-\end{center}
+\caption{Sensibilidad del caso de referencia ($\lambda = 0{,}7$).}
+\label{tab:sensib}
+\end{table}
 
-Duplicar $h_{\mathrm{ext}}$ de 10 a 20 cuesta 3,6 puntos de rendimiento; llevarlo
-de 20 a 30, otros 3,4. Es una sensibilidad apreciable, pero sobre un parámetro
-cuyo rango de incertidumbre es justamente ese. La emisividad tiene un efecto
-parecido y en el mismo sentido: más emisividad, más pérdidas y pared más fría.
+Pasar $h_{\mathrm{ext}}$ de 10 a 20 cuesta 3,6 puntos de rendimiento; de 20 a
+30, otros 3,5. Es una sensibilidad apreciable, pero sobre un parámetro cuyo rango
+de incertidumbre es justamente ese. La emisividad tiene un efecto parecido y en
+el mismo sentido: más emisividad, más pérdidas y pared más fría.
 
 \section{Límites conocidos}
 
-\subsection{El intervalo de $T_w$ falla con la placa fría}
+\subsection{El intervalo de \texorpdfstring{$T_w$}{T\_w} falla con la placa fría}
 \label{sec:fallo}
 
 El extremo inferior de la bisección interna es $T_{\mathrm{cielo}}$, y eso
 supone que la pared acaba por encima del sumidero radiante. Es cierto siempre
-que la placa esté recibiendo flujo, pero no lo es cuando el flujo es casi nulo y
-el aire entra frío: entonces la pared se estabilizaría \emph{por debajo} de
+que la placa esté recibiendo flujo, pero no cuando el flujo es casi nulo y el
+aire entra frío: entonces la pared se estabilizaría \emph{por debajo} de
 $T_{\mathrm{cielo}}$, fuera del intervalo, y \texttt{\_biseccion} lanza
-\texttt{ValueError}.
-
-La condición exacta es que el balance en el extremo inferior sea negativo:
+\texttt{ValueError}. La condición es
 \[
-  q_{\mathrm{abs}} \;<\; h_{\mathrm{ext}}\,(T_{\mathrm{cielo}} - T_{\mathrm{amb}})\,A
-  \;+\; \frac{A\,(T_{\mathrm{cielo}} - T_f)}{R}.
+  q''_{\mathrm{abs}} \;<\; h_{\mathrm{ext}}\,(T_{\mathrm{cielo}} - T_{\mathrm{amb}})
+  \;+\; (1 - \varphi)\,\frac{T_{\mathrm{cielo}} - T_f}{R},
 \]
-El primer término es pequeño --- 49~W/m$^2$ con los valores por defecto ---, así que
-lo que manda es el segundo: el intervalo falla en cuanto el fluido está más frío
-que el cielo y el flujo no basta para compensarlo. Con aire a 17~$^\circ$C y las
-constantes por defecto, el umbral está en unos 6,2~kW/m$^2$.
-
-En la práctica esto no afecta a ningún punto de diseño: un receptor de torre
-trabaja entre 100 y 500~kW/m$^2$, dos órdenes de magnitud por encima. Sí aparece
-al explorar el modelo con flujos residuales y aire ambiente, por ejemplo en un
-arranque en frío. Arreglarlo es una línea: bajar el extremo inferior a
-\[
-  T_w^{\min} = \min\bigl(T_{\mathrm{cielo}},\ T_{\mathrm{amb}},\ T_f\bigr) - 1,
-\]
-que es la temperatura por debajo de la cual la pared gana calor de todo lo que
-la rodea, y el balance es positivo con seguridad.
-
-Conviene señalar que el caso límite que ya se comprobó en su día --- flujo casi
-nulo con el aire entrando a 500~$^\circ$C --- sí funciona, y por eso no se había
-detectado: con el fluido muy por encima del cielo, el extremo inferior sigue
-siendo válido.
-
-\subsection{Comentario desactualizado en el bloque \texttt{\_\_main\_\_}}
-
-El comentario que encabeza el caso de ejemplo dice:
-
-\begin{quote}\small
-\emph{Con 300 kW/m2 de pico y este mismo gasto, la pared se va a 946 C y el acero
-no aguanta: hay que subir el gasto a 0.6 kg/s.}
-\end{quote}
-
-Se escribió cuando el ejemplo usaba $G = 0{,}35$~kg/s, y ahora usa 0,6. Con los
-valores actuales la frase se contradice: «este mismo gasto» ya \emph{es} 0,6. Los
-números reales son
-
-\begin{center}
-\begin{tabular}{llr}
-  \toprule
-  $q''_{\mathrm{pico}}$ & $G$ & $T_w^{\max}$ \\
-  \midrule
-  300~kW/m$^2$ & 0,35~kg/s & 951~$^\circ$C \quad(supera el límite) \\
-  300~kW/m$^2$ & 0,60~kg/s & 812~$^\circ$C \\
-  200~kW/m$^2$ & 0,35~kg/s & 777~$^\circ$C \\
-  200~kW/m$^2$ & 0,60~kg/s & 659~$^\circ$C \quad(caso de ejemplo) \\
-  \bottomrule
-\end{tabular}
-\end{center}
-
-El fondo del comentario sigue siendo correcto --- con 0,35~kg/s y 300~kW/m$^2$ el
-acero no aguanta, y subir a 0,6 lo arregla ---, solo hay que reescribir la frase
-para que no diga «este mismo gasto».
+que con aire a 17~$^\circ$C y el caso de referencia da un umbral de unos
+5,9~kW/m$^2$. Un receptor de torre trabaja entre 100 y 500~kW/m$^2$, así que no
+afecta a ningún punto de diseño, pero sí aparecería al explorar un arranque en
+frío. Arreglarlo es una línea: bajar el extremo inferior a
+$\min(T_{\mathrm{cielo}}, T_{\mathrm{amb}}, T_f) - 1$, por debajo de lo cual la
+pared gana calor de todo lo que la rodea.
 
 \subsection{Hipótesis físicas}
 
 \begin{itemize}
-  \item \textbf{Columnas adiabáticas entre sí}: ni conducción lateral por la
-        chapa ni mezcla. Es lo que hace que el perfil de salida reproduzca la
-        forma de la campana; con conducción lateral saldría más plano, de modo
-        que éste es el caso conservador para el punto caliente.
-  \item \textbf{No se calcula la pérdida de carga.} A 47~m/s en un canal de
-        pillow plate no va a ser pequeña, y es lo primero que habría que añadir:
-        las ecuaciones (18) y (19) ya están en el \texttt{formulas.py} del otro
-        paquete, y \texttt{asignacion} ya devuelve $n_1$ y $n_2$, que ahora mismo
-        se calculan y no se usan.
-  \item \textbf{Reparto de caudal uniforme entre columnas.} En realidad las
-        columnas centrales, más calientes y por tanto menos densas, tenderían a
-        recibir menos caudal, lo que agrava el punto caliente.
+  \item \textbf{Mezcla entre columnas por un factor $\lambda$ sin calibrar}, y
+        sin conducción lateral por la chapa entre porciones más allá de la que
+        recoge $\lambda$.
+  \item \textbf{Chapa isoterma dentro de cada porción}, lo que permite que el
+        calor que cae sobre el punto de soldadura llegue al fluido.
+  \item \textbf{Sin soldaduras de borde}: la placa es un campo de celdas de
+        soldadura que la cubre entera.
+  \item \textbf{Reparto de gasto uniforme entre columnas}, sin redistribución
+        por la diferencia de pérdida de carga. En realidad las columnas
+        centrales, más calientes y menos densas, tenderían a recibir algo menos
+        de caudal, lo que agrava el punto caliente; la dispersión de la pérdida
+        de carga entre columnas, del 1~\%, indica que el efecto es pequeño.
   \item \textbf{Sin reradiación entre porciones} ni factor de vista distinto de
         1: cada porción ve el cielo por completo. En un receptor de cavidad esto
         sería inaceptable; en una placa plana es razonable.
@@ -774,39 +843,59 @@ para que no diga «este mismo gasto».
     import receptor as rc
 
     receptor = rc.Receptor(
-        mapa=mp.MapaGaussiano.desde_pico(L=1.5, W=1.0, q_pico=200e3,
-                                         sigma_x=1/3, sigma_y=0.5),
-        G=0.6,                        # kg/s de aire
+        mapa=mp.MapaGaussiano.desde_pico(L=1.5, W=1.5, q_pico=200e3,
+                                         sigma_x=0.5, sigma_y=0.5),
+        G=0.9,                        # kg/s de aire
         T_ent=pf.CERO_CELSIUS + 300,  # 300 C, uniforme
-        p=10e5,                       # 10 bar
-        N=20, M=10,
-    )
+        p=10e5,                       # 10 bar a la entrada
+    )                                 # lam = 0.7 y PPHE1 por defecto
     resultado = receptor.resolver()
+    rc.tabla([resultado])
     resultado.resumen()
     resultado.dibujar()
 \end{verbatim}
 
-El caso de ejemplo del bloque \texttt{\_\_main\_\_} da:
+Al ejecutar el módulo, la tabla del barrido en temperatura de entrada es:
+
+\begin{center}
+\begin{tabular}{rrrr}
+  \toprule
+  $T$ entrada [$^\circ$C] & $\Delta p$ [kPa] & $Q$ fluido [kW] & rendimiento [\%] \\
+  \midrule
+  200 &  93,36 & 189,4 & 80,3 \\
+  300 & 111,28 & 172,8 & 73,3 \\
+  400 & 129,75 & 152,8 & 64,8 \\
+  500 & 148,74 & 128,9 & 54,7 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+y el caso de 300~$^\circ$C da:
 
 \begin{center}
 \begin{tabular}{lr}
   \toprule
-  Potencia incidente sobre la placa   & 157,2~kW \\
-  Calor al fluido                     & 115,2~kW \\
-  Pérdidas                            & 42,0~kW \\
+  Malla                               & $21\times71$ \\
+  Potencia incidente sobre la placa   & 235,8~kW \\
+  Calor al fluido                     & 172,8~kW \\
+  Pérdidas                            & 63,0~kW \\
   Rendimiento                         & 73,3~\% \\
   Interceptación del mapa             & 75,1~\% \\
-  Salida media / máxima / mínima      & 480 / 546 / 396~$^\circ$C \\
-  Pared máxima                        & 659~$^\circ$C \\
+  Salida de mezcla / máxima / mínima  & 480 / 481 / 478~$^\circ$C \\
+  Pared máxima                        & 636~$^\circ$C \\
+  Sección de paso                     & 36,06~cm$^2$ \\
   Velocidad en el canal               & 47,5~m/s \\
   Reynolds                            & $3{,}64\cdot10^{4}$ \\
   $h$ interno a la $T$ media          & 728~W/(m$^2$K) \\
+  Pérdida de carga                    & 111,3~kPa \\
   \bottomrule
 \end{tabular}
 \end{center}
 
 La presión de 10~bar no es un capricho: a presión atmosférica, ese mismo gasto
 pediría unos 300~m/s en el canal interno, que no es un punto de trabajo
-razonable.
+razonable. El gasto de 0,9~kg/s es el de la placa de 1~m de ancho de la versión
+anterior (0,6~kg/s) escalado con la potencia, para que la pared quede en la
+misma zona de temperaturas.
 
 \end{document}

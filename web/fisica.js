@@ -379,24 +379,16 @@
     var M = Math.max(Math.round(mapa.W / panel.s_t), 1);
     var N = Math.max(Math.round(mapa.L / s_L), 1);
     var dx = mapa.W / M, dy = mapa.L / N;
-    if (dx <= panel.w_e || (M === 1 && mapa.W <= 2 * panel.w_e)) {
-      throw new ErrorModelo(
-        'Las soldaduras de borde (' + (panel.w_e * 1e3).toFixed(0) + ' mm) no caben ' +
-        'en una columna de ' + (dx * 1e3).toFixed(0) + ' mm.',
-        'Ensancha la placa.');
-    }
-    // Las columnas de los extremos pierden la soldadura de borde
+    // Sin soldaduras de borde (w_e = 0): todas las columnas con el mismo ancho
     var anchos = [], i, j;
     for (i = 0; i < M; i++) anchos.push(dx);
-    anchos[0] -= panel.w_e;
-    anchos[M - 1] -= panel.w_e;
     var sumaAnchos = 0.0;
     for (i = 0; i < M; i++) sumaAnchos += anchos[i];
     // Un punto de soldadura por celda s_T x s_L (tresbolillo)
     var fracSoldadura = (Math.PI * panel.d_sp * panel.d_sp / 4) / (panel.s_t * s_L);
 
     var n = asignacionDeConstantes(panel.s_t, panel.s_2l, panel.d_sp, panel.b_i);
-    var seccion = fChI(panel.b_i, mapa.W, panel.w_e);  // Ec. (16), w_pp = W
+    var seccion = fChI(panel.b_i, mapa.W, 0.0);        // Ec. (16), w_pp = W, w_e = 0
     var de = deI(panel.b_i);                            // Ec. (14)
     var e = panel.delta_pp;
     var h_ext = cfg.h_ext, eps = cfg.eps, alfa = cfg.alfa;

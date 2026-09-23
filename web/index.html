@@ -627,10 +627,10 @@ img{max-width:100%}
             <ul>
               <li>La malla la dicta el panel: una porción por celda del patrón de soldaduras, <i>s</i><sub>T</sub> de ancho y <i>s</i><sub>L</sub> de alto, con un punto de soldadura en cada una.</li>
               <li>Cada fila se resuelve con columnas <strong>adiabáticas</strong> y su salida se pondera, en entalpía, con la de <strong>mezcla completa</strong> de la fila mediante <i>λ</i>. Así la mezcla conserva la energía para cualquier <i>λ</i>.</li>
-              <li>Las <strong>soldaduras</strong> reciben flujo y pierden calor, pero no ceden calor al fluido porque no tienen aire detrás: se descuentan del área de intercambio, igual que la soldadura de borde en las columnas de los extremos.</li>
+              <li>Las <strong>soldaduras</strong> reciben flujo y pierden calor, pero no ceden calor al fluido porque no tienen aire detrás: se descuentan del área de intercambio. No se consideran soldaduras de borde.</li>
               <li>El flujo de cada porción se <strong>integra</strong> dentro de la celda con la función error, no se muestrea en su centro: la suma nodal reproduce la potencia total exactamente.</li>
               <li>El salto de calor del aire se escribe con <strong>entalpías</strong>, no con <code>cp·ΔT</code>: con saltos de 200–400 K por columna, el c<sub>p</sub> de la entrada se dejaría un 7 % del calor.</li>
-              <li>La sección de paso es la de la ec. (16), <i>b</i><sub>i</sub>/√2·(<i>W</i> − 2<i>w</i><sub>e</sub>), y el gasto se reparte según la anchura de paso de cada columna: la velocidad es la misma en todas.</li>
+              <li>La sección de paso es la de la ec. (16) sin soldaduras de borde, <i>b</i><sub>i</sub>/√2·<i>W</i>, y el gasto se reparte por igual entre columnas: la velocidad es la misma en todas.</li>
               <li>La <strong>pérdida de carga</strong> es la ec. (19) fila a fila, más el término de aceleración del gas, bajando la presión a lo largo del canal. El cálculo térmico no depende de la presión.</li>
               <li>No se considera la reradiación entre porciones ni la redistribución del gasto por diferencias de pérdida de carga entre columnas.</li>
             </ul>
@@ -978,8 +978,7 @@ function pintarMapa(spec, r){
   $('e-' + spec.id).textContent = 'x = ' + n(r.mapa.W, 2) + ' m';
 }
 
-// Donde no hay aire: los puntos de soldadura, a escala y al tresbolillo, y las
-// dos soldaduras de borde. Un punto por porción: en las filas pares en el
+// Los puntos de soldadura, a escala y al tresbolillo. Un punto por porción: en las filas pares en el
 // centro de cada celda y en las impares desplazado media celda, sobre las
 // fronteras entre columnas. El modelo solo usa la fracción de área, así que
 // dónde cae cada punto dentro de su celda es cosa del dibujo.
@@ -987,9 +986,6 @@ function pintarSoldaduras(o, r, ancho, alto){
   var ex = ancho / r.mapa.W, ey = alto / r.mapa.L;      // px por metro
   var M = r.M, N = r.N, i, j;
   o.fillStyle = '#000000';
-  var borde = r.panel.w_e * ex;
-  o.fillRect(0, 0, borde, alto);
-  o.fillRect(ancho - borde, 0, borde, alto);
   // Exactamente a escala: el diámetro es el d_sp del deslizador, sin mínimos
   var rx = r.panel.d_sp / 2 * ex, ry = r.panel.d_sp / 2 * ey;
   o.beginPath();
