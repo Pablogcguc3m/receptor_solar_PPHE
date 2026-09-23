@@ -590,6 +590,9 @@ img{max-width:100%}
             <span class="sub">en <i>y</i> = L</span>
           </div>
           <p class="sub" style="color:var(--muted)">Con <i>λ</i> = 1 las columnas son adiabáticas y el perfil reproduce la campana; al bajar <i>λ</i> la mezcla fila a fila lo aplana. El efecto se compone en cada fila: casi todo ocurre entre 0,9 y 1.</p>
+          <div class="leyenda">
+            <span><i style="background:var(--fluido)"></i>Aire a la salida</span>
+          </div>
           <div class="grafica" id="g-perfil"></div>
         </div>
         <div class="tarjeta">
@@ -600,7 +603,7 @@ img{max-width:100%}
           <div class="leyenda">
             <span><i style="background:var(--fluido)"></i>Aire</span>
             <span><i style="background:var(--pared)"></i>Pared</span>
-            <span><i style="background:var(--crit); height:0; border-top:2px dashed var(--crit)"></i>Límite AISI 321</span>
+            <span><i style="background:var(--crit); height:0; border-top:2px dashed var(--crit)"></i>Límite AISI 321 (877 °C)</span>
           </div>
           <div class="grafica" id="g-columna"></div>
         </div>
@@ -1101,9 +1104,6 @@ function grafica(destino, cfg){
     var cCrit = css.getPropertyValue('--crit').trim();
     svg.appendChild(el('line', { x1: ml, x2: ml + ax, y1: Y(cfg.refY), y2: Y(cfg.refY),
                                  stroke: cCrit, 'stroke-width': 1.5, 'stroke-dasharray': '5 4' }));
-    var rt = el('text', { x: ml + ax, y: Y(cfg.refY) - 6, fill: cCrit, 'font-size': 10.5,
-                          'text-anchor': 'end', 'font-family': 'Inter, sans-serif', 'font-variant-numeric': 'tabular-nums' });
-    rt.textContent = n(cfg.refY, 0) + ' °C'; svg.appendChild(rt);
   }
 
   cfg.series.forEach(function(s){
@@ -1116,12 +1116,8 @@ function grafica(destino, cfg){
                                        stroke: css.getPropertyValue('--surface').trim(), 'stroke-width': 1.5 }));
       });
     }
-    // Etiqueta directa en el extremo, para no depender del color solo.
-    var u = s.puntos[s.puntos.length - 1];
-    var et = el('text', { x: X(u[0]) - 4, y: Y(u[1]) - 10, fill: s.color, 'font-size': 11,
-                          'font-weight': 500, 'text-anchor': 'end',
-                          'font-family': 'Inter, sans-serif', 'font-variant-numeric': 'tabular-nums' });
-    et.textContent = s.nombre + ' ' + n(u[1], 0); svg.appendChild(et);
+    // Sin etiquetas sobre las curvas: tapaban los datos. Lo que es cada color lo
+    // dice la leyenda de la tarjeta, y los valores, el globo al pasar el ratón.
   });
 
   destino.innerHTML = '';
