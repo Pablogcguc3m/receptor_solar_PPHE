@@ -291,6 +291,14 @@ select{
 .tarjeta-cab{display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:6px; flex-wrap:wrap}
 .tarjeta .sub{font-size:12.5px; color:var(--muted); letter-spacing:-.004em}
 .leyenda{display:flex; gap:16px; margin:12px 0 4px; flex-wrap:wrap}
+/* Botón de descarga de cada figura: discreto, a la derecha de su título */
+.mapa figcaption{display:flex; justify-content:space-between; align-items:flex-start; gap:10px}
+.descargar{
+  flex:none; font:500 11.5px/1 var(--sans); letter-spacing:-.004em; color:var(--ink-2);
+  background:transparent; border:1px solid var(--linea-fuerte); border-radius:100px;
+  padding:6px 11px; cursor:pointer; transition:background-color .15s, color .15s, border-color .15s;
+}
+.descargar:hover{color:var(--ink); border-color:rgba(255,255,255,.55); background:rgba(255,255,255,.06)}
 .leyenda span{display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink-2)}
 .leyenda i{width:15px; height:2px; border-radius:1px; display:inline-block}
 .grafica{position:relative}
@@ -552,7 +560,8 @@ img{max-width:100%}
       </div>
       <section class="mapas">
         <figure class="mapa">
-          <figcaption><h3>Flujo incidente</h3><p class="sub">q″ [kW/m²]</p></figcaption>
+          <figcaption><div><h3>Flujo incidente</h3><p class="sub">q″ [kW/m²]</p></div>
+            <button class="descargar" data-descargar="flujo" title="Descargar el mapa como PNG">PNG ↓</button></figcaption>
           <div class="lienzo" id="l-flujo">
             <canvas class="campo" id="c-flujo"></canvas><canvas class="capa" id="o-flujo"></canvas>
             <div class="globo" id="g-flujo"></div>
@@ -562,7 +571,8 @@ img{max-width:100%}
           <div class="cbar-pies"><span id="cbmin-flujo"></span><span id="cbmax-flujo"></span></div>
         </figure>
         <figure class="mapa">
-          <figcaption><h3>Temperatura del aire</h3><p class="sub">T salida de cada porción [°C] · soldaduras en negro</p></figcaption>
+          <figcaption><div><h3>Temperatura del aire</h3><p class="sub">T salida de cada porción [°C] · soldaduras en negro</p></div>
+            <button class="descargar" data-descargar="fluido" title="Descargar el mapa como PNG">PNG ↓</button></figcaption>
           <div class="lienzo" id="l-fluido">
             <canvas class="campo" id="c-fluido"></canvas><canvas class="capa" id="o-fluido"></canvas>
             <div class="globo" id="g-fluido"></div>
@@ -572,7 +582,8 @@ img{max-width:100%}
           <div class="cbar-pies"><span id="cbmin-fluido"></span><span id="cbmax-fluido"></span></div>
         </figure>
         <figure class="mapa">
-          <figcaption><h3>Temperatura de pared</h3><p class="sub">T<sub>w</sub> [°C] · límite AISI 321 en rojo</p></figcaption>
+          <figcaption><div><h3>Temperatura de pared</h3><p class="sub">T<sub>w</sub> [°C] · límite AISI 321 en rojo</p></div>
+            <button class="descargar" data-descargar="pared" title="Descargar el mapa como PNG">PNG ↓</button></figcaption>
           <div class="lienzo" id="l-pared">
             <canvas class="campo" id="c-pared"></canvas><canvas class="capa" id="o-pared"></canvas>
             <div class="globo" id="g-pared"></div>
@@ -587,7 +598,8 @@ img{max-width:100%}
         <div class="tarjeta">
           <div class="tarjeta-cab">
             <h3>Perfil de salida del aire</h3>
-            <span class="sub">en <i>y</i> = L</span>
+            <span class="sub">en <i>y</i> = L
+              <button class="descargar" data-descargar="perfil" title="Descargar la gráfica como PNG">PNG ↓</button></span>
           </div>
           <p class="sub" style="color:var(--muted)">Con <i>λ</i> = 1 las columnas son adiabáticas y el perfil reproduce la campana; al bajar <i>λ</i> la mezcla fila a fila lo aplana. El efecto se compone en cada fila: casi todo ocurre entre 0,9 y 1.</p>
           <div class="leyenda">
@@ -598,7 +610,8 @@ img{max-width:100%}
         <div class="tarjeta">
           <div class="tarjeta-cab">
             <h3>Recorrido de la columna <span class="num" id="col-sel">5</span></h3>
-            <span class="sub" id="col-x"></span>
+            <span class="sub"><span id="col-x"></span>
+              <button class="descargar" data-descargar="columna" title="Descargar la gráfica como PNG">PNG ↓</button></span>
           </div>
           <div class="leyenda">
             <span><i style="background:var(--fluido)"></i>Aire</span>
@@ -945,21 +958,9 @@ function pintarMapa(spec, r){
   var dx = ancho / M, dy = alto / N;
   var rect = function(i, j){ return [i * dx, (N - 1 - j) * dy, dx, dy]; };
 
-  if (spec.limite){
-    o.strokeStyle = getComputedStyle(document.body).getPropertyValue('--crit').trim() || '#B23227';
-    o.lineWidth = 1.5;
-    for (j = 0; j < N; j++) for (i = 0; i < M; i++){
-      if (campo[j][i] <= RCP.LIMITE_AISI321) continue;
-      var q = rect(i, j);
-      // Solo los lados que dan al exterior de la region: queda el contorno.
-      o.beginPath();
-      if (j === N-1 || campo[j+1][i] <= RCP.LIMITE_AISI321){ o.moveTo(q[0], q[1]); o.lineTo(q[0]+q[2], q[1]); }
-      if (j === 0   || campo[j-1][i] <= RCP.LIMITE_AISI321){ o.moveTo(q[0], q[1]+q[3]); o.lineTo(q[0]+q[2], q[1]+q[3]); }
-      if (i === 0   || campo[j][i-1] <= RCP.LIMITE_AISI321){ o.moveTo(q[0], q[1]); o.lineTo(q[0], q[1]+q[3]); }
-      if (i === M-1 || campo[j][i+1] <= RCP.LIMITE_AISI321){ o.moveTo(q[0]+q[2], q[1]); o.lineTo(q[0]+q[2], q[1]+q[3]); }
-      o.stroke();
-    }
-  }
+  if (spec.limite)
+    contornoLimite(o, campo, ancho, alto,
+                   getComputedStyle(document.body).getPropertyValue('--crit').trim() || '#B23227', 1.5);
   if (spec.soldaduras) pintarSoldaduras(o, r, ancho, alto);
   if (sel){
     var s = rect(sel.i, sel.j);
@@ -979,6 +980,24 @@ function pintarMapa(spec, r){
   $('cbmin-' + spec.id).textContent = n(mn, dec);
   $('cbmax-' + spec.id).textContent = n(mx, dec) + (spec.id === 'flujo' ? ' kW/m²' : ' °C');
   $('e-' + spec.id).textContent = 'x = ' + n(r.mapa.W, 2) + ' m';
+}
+
+// Contorno de la zona de pared por encima del límite del AISI 321. Solo se
+// trazan los lados de celda que dan al exterior de la región: queda el borde.
+function contornoLimite(o, campo, ancho, alto, color, grosor){
+  var N = campo.length, M = campo[0].length, dx = ancho / M, dy = alto / N, i, j;
+  var L = RCP.LIMITE_AISI321;
+  o.strokeStyle = color; o.lineWidth = grosor;
+  o.beginPath();
+  for (j = 0; j < N; j++) for (i = 0; i < M; i++){
+    if (campo[j][i] <= L) continue;
+    var x = i * dx, y = (N - 1 - j) * dy;
+    if (j === N-1 || campo[j+1][i] <= L){ o.moveTo(x, y); o.lineTo(x + dx, y); }
+    if (j === 0   || campo[j-1][i] <= L){ o.moveTo(x, y + dy); o.lineTo(x + dx, y + dy); }
+    if (i === 0   || campo[j][i-1] <= L){ o.moveTo(x, y); o.lineTo(x, y + dy); }
+    if (i === M-1 || campo[j][i+1] <= L){ o.moveTo(x + dx, y); o.lineTo(x + dx, y + dy); }
+  }
+  o.stroke();
 }
 
 // Los puntos de soldadura, a escala y al tresbolillo. Cada porción es la celda
@@ -1155,6 +1174,236 @@ function grafica(destino, cfg){
   });
 }
 
+// Las dos gráficas, como datos: las usan la pantalla y la descarga, cada una
+// con su paleta.
+function cfgPerfil(r, col){
+  return {
+    series: [{ nombre: 'T', leyenda: 'Aire a la salida', color: col.fluido,
+               puntos: r.xCentros.map(function(x, i){ return [x, r.perfilSalida[i] - C]; }) }],
+    x0: 0, x1: r.mapa.W, ejeX: 'x, anchura [m]', ejeY: 'T [°C]', decY: 0,
+    alt: 'Temperatura del aire a la salida en función de la anchura'
+  };
+}
+function cfgColumna(r, i, col){
+  return {
+    series: [
+      { nombre: 'pared', leyenda: 'Pared', color: col.pared,
+        puntos: r.yCentros.map(function(y, j){ return [y, r.T_pared[j][i] - C]; }) },
+      { nombre: 'aire', leyenda: 'Aire', color: col.fluido,
+        puntos: r.yCentros.map(function(y, j){ return [y, r.T_fluido[j][i] - C]; }) }
+    ],
+    x0: 0, x1: r.mapa.L, ejeX: 'y, altura [m]', ejeY: 'T [°C]', decY: 0,
+    refY: LIM_C, refLeyenda: 'Límite AISI 321 (' + n(LIM_C, 0) + ' °C)',
+    alt: 'Temperatura del aire y de la pared a lo largo de la columna seleccionada'
+  };
+}
+
+/* ---------------------------------------------------------- descarga ----- */
+// Cada figura se vuelve a dibujar desde los datos del último cálculo, sobre un
+// lienzo propio con fondo blanco, para que sirva tal cual en un documento: sin
+// la celda seleccionada ni nada de la interfaz, y con título, ejes, escala de
+// color o leyenda, y una línea con el punto de trabajo. Guardar la imagen del
+// lienzo de la página no sirve: lo de encima es una capa transparente con solo
+// la selección, y los colores de las gráficas salen de variables CSS.
+var IMPRESION = {
+  fondo: '#FFFFFF', tinta: '#1A1A1A', tenue: '#5A5A5A', rejilla: '#E4E4E4', eje: '#8A8A8A',
+  fluido: '#1F63C6', pared: '#D9531E', crit: '#C62828'
+};
+var ESCALA_PNG = 2;                    // px del PNG por px lógico: nítido al imprimir
+var FUENTE = 'Inter, "Segoe UI", Arial, sans-serif';
+
+function lienzoPng(ancho, alto){
+  var cv = document.createElement('canvas');
+  cv.width = Math.round(ancho * ESCALA_PNG); cv.height = Math.round(alto * ESCALA_PNG);
+  var o = cv.getContext('2d');
+  o.scale(ESCALA_PNG, ESCALA_PNG);
+  o.fillStyle = IMPRESION.fondo; o.fillRect(0, 0, ancho, alto);
+  return { cv: cv, o: o };
+}
+function texto(o, t, x, y, tam, color, alinear, peso){
+  o.font = (peso || 400) + ' ' + tam + 'px ' + FUENTE;
+  o.fillStyle = color; o.textAlign = alinear || 'left'; o.textBaseline = 'alphabetic';
+  o.fillText(t, x, y);
+}
+// Dos líneas con lo que hace falta para saber de qué simulación es la figura:
+// el punto de trabajo y la geometría
+function puntoDeTrabajo(r){
+  return [
+    'q″ pico ' + n(r.q_pico / 1e3, 0) + ' kW/m² · G ' + n(est.G, 2) + ' kg/s · T ent ' +
+      n(est.T_ent, 0) + ' °C · p ' + n(est.p, 1) + ' bar · λ ' + n(r.lam, 2),
+    r.n.familia.charAt(0).toUpperCase() + r.n.familia.slice(1) + ' ' + n(r.panel.s_t * 1e3, 1) +
+      ' × ' + n(r.panel.s_2l * 1e3, 1) + ' mm · b_i ' + n(r.panel.b_i * 1e3, 2) + ' mm · d_sp ' +
+      n(r.panel.d_sp * 1e3, 2) + ' mm · malla ' + r.M + ' × ' + r.N
+  ];
+}
+function guardarPng(cv, nombre){
+  cv.toBlob(function(b){
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(b); a.download = nombre;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+  }, 'image/png');
+}
+
+var TITULOS_MAPA = {
+  flujo:  ['Flujo incidente', 'kW/m²', 'mapa_flujo_incidente.png'],
+  fluido: ['Temperatura del aire', '°C', 'mapa_temperatura_aire.png'],
+  pared:  ['Temperatura de pared', '°C', 'mapa_temperatura_pared.png']
+};
+
+function descargarMapa(id){
+  var r = ultimo; if (!r) return;
+  var spec = MAPAS.filter(function(m){ return m.id === id; })[0], tit = TITULOS_MAPA[id];
+  var campo = spec.datos(r), N = campo.length, M = campo[0].length, fn = ESCALAS[cmap], i, j, v;
+  var mn = Infinity, mx = -Infinity;
+  for (j = 0; j < N; j++) for (i = 0; i < M; i++){
+    v = campo[j][i] * spec.esc + (spec.off || 0); if (v < mn) mn = v; if (v > mx) mx = v;
+  }
+  var rango = (mx - mn) || 1;
+
+  // La placa, a escala: 560 px lógicos en su lado mayor
+  var k = 560 / Math.max(r.mapa.W, r.mapa.L), pw = r.mapa.W * k, ph = r.mapa.L * k;
+  var ml = 78, mt = 112, mr = 118, mb = 66;
+  var ancho = Math.max(ml + pw + mr, 640), alto = mt + ph + mb;
+  var L = lienzoPng(ancho, alto), o = L.o;
+
+  texto(o, tit[0] + ' [' + tit[1] + ']', ml, 32, 20, IMPRESION.tinta, 'left', 600);
+  puntoDeTrabajo(r).forEach(function(t, q){ texto(o, t, ml, 54 + 16 * q, 11.5, IMPRESION.tenue); });
+  var notas = { fluido: 'Salida de cada porción · puntos de soldadura en negro, a escala',
+                pared: 'Contorno rojo: zona por encima del límite del AISI 321 (' + n(LIM_C, 0) + ' °C)' };
+  if (notas[id]) texto(o, notas[id], ml, 86, 11.5, IMPRESION.tenue);
+
+  // Campo, una celda por porción y sin interpolar
+  o.save(); o.translate(ml, mt);
+  var dx = pw / M, dy = ph / N;
+  for (j = 0; j < N; j++) for (i = 0; i < M; i++){
+    v = campo[j][i] * spec.esc + (spec.off || 0);
+    var c = fn((v - mn) / rango);
+    o.fillStyle = 'rgb(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ')';
+    // Medio píxel de solape para que no asomen costuras blancas entre celdas
+    o.fillRect(i * dx, (N - 1 - j) * dy, dx + 0.5, dy + 0.5);
+  }
+  if (spec.soldaduras) pintarSoldaduras(o, r, pw, ph);
+  if (spec.limite) contornoLimite(o, campo, pw, ph, IMPRESION.crit, 2);
+  o.strokeStyle = IMPRESION.eje; o.lineWidth = 1; o.strokeRect(0, 0, pw, ph);
+  o.restore();
+
+  // Ejes, en metros
+  o.strokeStyle = IMPRESION.eje; o.lineWidth = 1;
+  bonito(0, r.mapa.W, 5).forEach(function(xv){
+    var x = ml + xv * k;
+    o.beginPath(); o.moveTo(x, mt + ph); o.lineTo(x, mt + ph + 5); o.stroke();
+    texto(o, n(xv, 2), x, mt + ph + 19, 11.5, IMPRESION.tenue, 'center');
+  });
+  bonito(0, r.mapa.L, 5).forEach(function(yv){
+    var y = mt + ph - yv * k;
+    o.beginPath(); o.moveTo(ml, y); o.lineTo(ml - 5, y); o.stroke();
+    texto(o, n(yv, 2), ml - 9, y + 4, 11.5, IMPRESION.tenue, 'right');
+  });
+  texto(o, 'x, anchura [m]', ml + pw / 2, mt + ph + 44, 13, IMPRESION.tinta, 'center');
+  o.save(); o.translate(24, mt + ph / 2); o.rotate(-Math.PI / 2);
+  texto(o, 'y, altura [m]', 0, 0, 13, IMPRESION.tinta, 'center'); o.restore();
+
+  // Escala de color, vertical y del alto de la placa
+  var bx = ml + pw + 26, bw = 16;
+  var g = o.createLinearGradient(0, mt + ph, 0, mt);
+  for (i = 0; i <= 24; i++){
+    var cc = fn(i / 24);
+    g.addColorStop(i / 24, 'rgb(' + Math.round(cc[0]) + ',' + Math.round(cc[1]) + ',' + Math.round(cc[2]) + ')');
+  }
+  o.fillStyle = g; o.fillRect(bx, mt, bw, ph);
+  o.strokeStyle = IMPRESION.eje; o.strokeRect(bx, mt, bw, ph);
+  var marcas = rango > 1e-9 ? bonito(mn, mx, 6) : [mn];
+  marcas.forEach(function(tv){
+    var y = mt + ph - (tv - mn) / rango * ph;
+    o.beginPath(); o.moveTo(bx + bw, y); o.lineTo(bx + bw + 5, y); o.stroke();
+    texto(o, n(tv, 0), bx + bw + 9, y + 4, 11.5, IMPRESION.tenue);
+  });
+  texto(o, tit[1], bx, mt - 10, 12, IMPRESION.tinta);
+
+  guardarPng(L.cv, tit[2]);
+}
+
+function descargarGrafica(que){
+  var r = ultimo; if (!r) return;
+  var cfg = que === 'perfil' ? cfgPerfil(r, IMPRESION) : cfgColumna(r, sel.i, IMPRESION);
+  var titulo = que === 'perfil' ? 'Perfil de salida del aire en y = L'
+    : 'Recorrido de la columna ' + (sel.i + 1) + ' (x = ' + n(r.xCentros[sel.i], 3) + ' m)';
+  var nombre = que === 'perfil' ? 'perfil_salida_aire.png' : 'recorrido_columna_' + (sel.i + 1) + '.png';
+
+  var ancho = 900, alto = 560, ml = 78, mr = 28, mt = 124, mb = 64;
+  var ax = ancho - ml - mr, ay = alto - mt - mb;
+  var L = lienzoPng(ancho, alto), o = L.o;
+  texto(o, titulo, ml, 32, 20, IMPRESION.tinta, 'left', 600);
+  puntoDeTrabajo(r).forEach(function(t, q){ texto(o, t, ml, 54 + 16 * q, 11.5, IMPRESION.tenue); });
+
+  // Mismos límites que la gráfica de pantalla
+  var xs = [], ys = [];
+  cfg.series.forEach(function(s){ s.puntos.forEach(function(p){ xs.push(p[0]); ys.push(p[1]); }); });
+  var x0 = cfg.x0, x1 = cfg.x1;
+  var y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
+  var hueco = (y1 - y0) || 1; y0 -= hueco * 0.12; y1 += hueco * 0.16;
+  var X = function(v){ return ml + (v - x0) / ((x1 - x0) || 1) * ax; };
+  var Y = function(v){ return mt + ay - (v - y0) / ((y1 - y0) || 1) * ay; };
+  // La línea del límite solo se dibuja si cae dentro del rango, y la leyenda
+  // solo la anuncia entonces
+  var conRef = cfg.refY != null && cfg.refY > y0 && cfg.refY < y1;
+
+  // Leyenda
+  var lx = ml;
+  cfg.series.forEach(function(s){
+    o.strokeStyle = s.color; o.lineWidth = 2.5; o.setLineDash([]);
+    o.beginPath(); o.moveTo(lx, 98); o.lineTo(lx + 22, 98); o.stroke();
+    texto(o, s.leyenda, lx + 30, 102, 13, IMPRESION.tinta);
+    lx += 30 + o.measureText(s.leyenda).width + 28;
+  });
+  if (cfg.refLeyenda && conRef){
+    o.strokeStyle = IMPRESION.crit; o.lineWidth = 2; o.setLineDash([6, 4]);
+    o.beginPath(); o.moveTo(lx, 98); o.lineTo(lx + 22, 98); o.stroke(); o.setLineDash([]);
+    texto(o, cfg.refLeyenda, lx + 30, 102, 13, IMPRESION.tinta);
+  }
+
+
+  o.lineWidth = 1;
+  bonito(y0, y1, 6).forEach(function(v){
+    o.strokeStyle = IMPRESION.rejilla; o.beginPath(); o.moveTo(ml, Y(v)); o.lineTo(ml + ax, Y(v)); o.stroke();
+    texto(o, n(v, cfg.decY || 0), ml - 9, Y(v) + 4, 12, IMPRESION.tenue, 'right');
+  });
+  bonito(x0, x1, 6).forEach(function(v){
+    o.strokeStyle = IMPRESION.eje; o.beginPath(); o.moveTo(X(v), mt + ay); o.lineTo(X(v), mt + ay + 5); o.stroke();
+    texto(o, n(v, 2), X(v), mt + ay + 20, 12, IMPRESION.tenue, 'center');
+  });
+  o.strokeStyle = IMPRESION.eje;
+  o.beginPath(); o.moveTo(ml, mt); o.lineTo(ml, mt + ay); o.lineTo(ml + ax, mt + ay); o.stroke();
+  texto(o, cfg.ejeX, ml + ax / 2, alto - 16, 13, IMPRESION.tinta, 'center');
+  o.save(); o.translate(24, mt + ay / 2); o.rotate(-Math.PI / 2);
+  texto(o, cfg.ejeY, 0, 0, 13, IMPRESION.tinta, 'center'); o.restore();
+
+  if (conRef){
+    o.strokeStyle = IMPRESION.crit; o.lineWidth = 2; o.setLineDash([6, 4]);
+    o.beginPath(); o.moveTo(ml, Y(cfg.refY)); o.lineTo(ml + ax, Y(cfg.refY)); o.stroke();
+    o.setLineDash([]);
+  }
+  cfg.series.forEach(function(s){
+    o.strokeStyle = s.color; o.lineWidth = 2.5; o.lineJoin = 'round'; o.lineCap = 'round';
+    o.beginPath();
+    s.puntos.forEach(function(p, q){ if (q) o.lineTo(X(p[0]), Y(p[1])); else o.moveTo(X(p[0]), Y(p[1])); });
+    o.stroke();
+    if (s.puntos.length <= 40){
+      o.fillStyle = s.color;
+      s.puntos.forEach(function(p){ o.beginPath(); o.arc(X(p[0]), Y(p[1]), 3.2, 0, 2 * Math.PI); o.fill(); });
+    }
+  });
+
+  guardarPng(L.cv, nombre);
+}
+
+document.addEventListener('click', function(e){
+  var b = e.target.closest && e.target.closest('[data-descargar]'); if (!b) return;
+  var que = b.dataset.descargar;
+  if (TITULOS_MAPA[que]) descargarMapa(que); else descargarGrafica(que);
+});
+
 /* ---------------------------------------------------------- pintado ----- */
 function pintar(r){
   var css = getComputedStyle(document.body);
@@ -1192,29 +1441,15 @@ function pintar(r){
 
   MAPAS.forEach(function(spec){ pintarMapa(spec, r); });
 
-  // Perfil de salida en y = L
-  grafica($('g-perfil'), {
-    series: [{ nombre: 'T', color: css.getPropertyValue('--fluido').trim(),
-               puntos: r.xCentros.map(function(x, i){ return [x, r.perfilSalida[i] - C]; }) }],
-    x0: 0, x1: r.mapa.W, ejeX: 'x, anchura [m]', ejeY: 'T [°C]', decY: 0,
-    alt: 'Temperatura del aire a la salida en función de la anchura'
-  });
+  var colores = { fluido: css.getPropertyValue('--fluido').trim(),
+                  pared: css.getPropertyValue('--pared').trim() };
+  grafica($('g-perfil'), cfgPerfil(r, colores));
 
   // Recorrido de la columna seleccionada
   var i = sel.i;
   $('col-sel').textContent = String(i + 1);
   $('col-x').textContent = 'x = ' + n(r.xCentros[i], 3) + ' m';
-  grafica($('g-columna'), {
-    series: [
-      { nombre: 'pared', color: css.getPropertyValue('--pared').trim(),
-        puntos: r.yCentros.map(function(y, j){ return [y, r.T_pared[j][i] - C]; }) },
-      { nombre: 'aire', color: css.getPropertyValue('--fluido').trim(),
-        puntos: r.yCentros.map(function(y, j){ return [y, r.T_fluido[j][i] - C]; }) }
-    ],
-    x0: 0, x1: r.mapa.L, ejeX: 'y, altura [m]', ejeY: 'T [°C]', decY: 0,
-    refY: LIM_C,
-    alt: 'Temperatura del aire y de la pared a lo largo de la columna seleccionada'
-  });
+  grafica($('g-columna'), cfgColumna(r, i, colores));
 
   // Porción seleccionada
   var j = sel.j;
