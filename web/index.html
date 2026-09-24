@@ -1263,7 +1263,7 @@ function descargarMapa(id){
 
   // La placa, a escala: 560 px lógicos en su lado mayor
   var k = 560 / Math.max(r.mapa.W, r.mapa.L), pw = r.mapa.W * k, ph = r.mapa.L * k;
-  var ml = 78, mt = 112, mr = 118, mb = 66;
+  var ml = 78, mt = 112, mr = 140, mb = 66;
   var ancho = Math.max(ml + pw + mr, 640), alto = mt + ph + mb;
   var L = lienzoPng(ancho, alto), o = L.o;
 
@@ -1313,12 +1313,22 @@ function descargarMapa(id){
   }
   o.fillStyle = g; o.fillRect(bx, mt, bw, ph);
   o.strokeStyle = IMPRESION.eje; o.strokeRect(bx, mt, bw, ph);
-  var marcas = rango > 1e-9 ? bonito(mn, mx, 6) : [mn];
-  marcas.forEach(function(tv){
-    var y = mt + ph - (tv - mn) / rango * ph;
+  // Marcas cada 50 y, en negrita, el mínimo y el máximo exactos. Se omiten las
+  // marcas redondas que quedarían encima de ellos (a menos de 14 px).
+  var yDe = function(tv){ return mt + ph - (rango > 1e-9 ? (tv - mn) / rango : 0) * ph; };
+  for (var tv = Math.ceil(mn / 50) * 50; tv <= mx; tv += 50){
+    var y = yDe(tv);
+    if (Math.abs(y - yDe(mn)) < 14 || Math.abs(y - yDe(mx)) < 14) continue;
     o.beginPath(); o.moveTo(bx + bw, y); o.lineTo(bx + bw + 5, y); o.stroke();
     texto(o, n(tv, 0), bx + bw + 9, y + 4, 11.5, IMPRESION.tenue);
+  }
+  [[mx, 'máx'], [mn, 'mín']].forEach(function(e){
+    var y = yDe(e[0]);
+    o.strokeStyle = IMPRESION.tinta; o.lineWidth = 1.5;
+    o.beginPath(); o.moveTo(bx - 4, y); o.lineTo(bx + bw + 7, y); o.stroke();
+    texto(o, n(e[0], 0) + ' ' + e[1], bx + bw + 9, y + 4, 11.5, IMPRESION.tinta, 'left', 600);
   });
+  o.lineWidth = 1;
   texto(o, tit[1], bx, mt - 10, 12, IMPRESION.tinta);
 
   guardarPng(L.cv, tit[2]);
