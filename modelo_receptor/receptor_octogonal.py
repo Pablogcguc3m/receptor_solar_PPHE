@@ -690,21 +690,79 @@ def tabla_lambda(resultados):
 # =============================================================================
 
 
-def estilo_latex(plt):
-    """Tipografía de las figuras a juego con la de LaTeX: Computer Modern.
+_LATIN_MODERN = ("lmroman10-regular.otf", "lmroman10-bold.otf",
+                 "lmroman10-italic.otf", "lmroman10-bolditalic.otf")
 
-    matplotlib trae la cmr10 de TeX, así que no hace falta tener LaTeX
-    instalado ni usar usetex, que es mucho más lento. La cmr10 no tiene el
-    signo menos de Unicode: los números de los ejes se escriben con mathtext,
-    que usa la misma familia (fontset 'cm'). Los rótulos no llevan tildes
-    porque la cmr10 tampoco las tiene.
+
+def _buscar_latin_modern():
+    """Rutas de las cuatro variantes de Latin Modern Roman, o None si falta alguna.
+
+    Primero se pregunta a la distribución de TeX (kpsewhich, que tienen MiKTeX
+    y TeX Live); si no, se miran las carpetas de fuentes de Windows y las de
+    TeX habituales en Linux.
     """
+    import os
+    import shutil
+    import subprocess
+
+    rutas = {}
+    if shutil.which("kpsewhich"):
+        for nombre in _LATIN_MODERN:
+            try:
+                salida = subprocess.run(["kpsewhich", nombre], capture_output=True,
+                                        text=True, timeout=10).stdout.strip()
+            except (OSError, subprocess.SubprocessError):
+                salida = ""
+            if salida and os.path.isfile(salida):
+                rutas[nombre] = salida
+    carpetas = [
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Windows", "Fonts"),
+        os.path.join(os.environ.get("WINDIR", ""), "Fonts"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "MiKTeX", "fonts",
+                     "opentype", "public", "lm"),
+        "/usr/share/texmf/fonts/opentype/public/lm",
+        "/usr/share/texlive/texmf-dist/fonts/opentype/public/lm",
+    ]
+    for nombre in _LATIN_MODERN:
+        for carpeta in carpetas:
+            ruta = os.path.join(carpeta, nombre)
+            if nombre not in rutas and os.path.isfile(ruta):
+                rutas[nombre] = ruta
+    return [rutas[n] for n in _LATIN_MODERN] if len(rutas) == len(_LATIN_MODERN) else None
+
+
+def estilo_latex(plt):
+    """Tipografía de las figuras a juego con la de LaTeX: Latin Modern Roman.
+
+    Latin Modern no viene con matplotlib: se registran las .otf de la
+    distribución de TeX (ver _buscar_latin_modern), sin usar usetex, que es
+    mucho más lento. Las fórmulas van en mathtext con el juego 'cm', Computer
+    Modern, que es el mismo diseño que Latin Modern. Si no se encuentra Latin
+    Modern, se usa la cmr10 que trae matplotlib (sin tildes ni °).
+
+    Los títulos van en negrita; el resto del texto, en redonda.
+    """
+    from matplotlib import font_manager
+
+    rutas = _buscar_latin_modern()
+    if rutas:
+        for ruta in rutas:
+            font_manager.fontManager.addfont(ruta)
+        familia = "Latin Modern Roman"
+    else:
+        print("No se encuentra Latin Modern: las figuras usan la cmr10 de matplotlib.")
+        familia = "cmr10"
     plt.rcParams.update({
         "font.family": "serif",
-        "font.serif": ["cmr10", "DejaVu Serif"],
+        "font.serif": [familia, "DejaVu Serif"],
+        "font.size": 11,
         "mathtext.fontset": "cm",
         "axes.formatter.use_mathtext": True,
         "axes.unicode_minus": False,
+        "axes.titleweight": "bold",
+        "axes.titlesize": 12,
+        "figure.titleweight": "bold",
+        "figure.titlesize": 14,
     })
 
 
@@ -727,9 +785,8 @@ def dibujar_mapa(res, plt):
                    extent=(0.0, m.W, 0.0, m.L), interpolation="bilinear")
     _limites_placas(ax, res, "white")
     ax.set_ylabel("$y$, altura [m]")
-    ax.set_title("Flujo incidente sobre medio receptor [MW/m$^2$]  "
-                 "($x = 0$: plano de simetria)")
-    fig.colorbar(im, ax=ax, shrink=0.85)
+    ax.set_title("Flujo incidente sobre medio receptor ($x = 0$: plano de simetría)")
+    fig.colorbar(im, ax=ax, shrink=0.85, label="$q''$ [MW/m$^2$]")
     fig.tight_layout()
     return fig
 
@@ -748,15 +805,17 @@ def dibujar_placas(res, plt):
             im = ax.imshow(v, cmap=cmap, origin="lower", aspect="auto", vmin=vmin, vmax=vmax,
                            extent=(p.x0, p.x0 + m.w, 0.0, m.L), interpolation="nearest")
             flecha = "sube" if p.sube else "baja"
-            ax.set_title(f"Placa {p.numero} ({flecha})\n{nombre}: "
-                         rf"{v.min():.0f} - {v.max():.0f} $^\circ$C", fontsize=9)
+            # Título en negrita y, debajo, el rango en redonda
+            ax.set_title(f"Placa {p.numero} ({flecha})", pad=18)
+            ax.text(0.5, 1.012, f"{nombre}: {v.min():.0f}–{v.max():.0f} °C",
+                    transform=ax.transAxes, ha="center", va="bottom", fontsize=10)
             if fila == len(campos) - 1:
                 ax.set_xlabel("$x$ [m]")
         ejes[fila][0].set_ylabel("$y$, altura [m]")
         fig.colorbar(im, ax=list(ejes[fila]), shrink=0.9,
-                     label=rf"$T$ {nombre.lower()} [$^\circ$C]")
-    fig.suptitle(rf"Campos de temperatura, $\lambda$ = {r.lam:.2f}, $G$ = {res.G:.1f} kg/s "
-                 f"por mitad")
+                     label=f"$T$ {nombre.lower()} [°C]")
+    fig.suptitle(rf"Campos de temperatura ($\lambda$ = {r.lam:.2f}, $G$ = {res.G:.1f} kg/s "
+                 f"por mitad)")
     return fig
 
 
