@@ -2,8 +2,10 @@
 
 Cada fluido es un objeto que sabe devolver su densidad, calor específico,
 conductividad térmica y viscosidad dinámica a la temperatura (y presión) que se
-le pida. De momento solo está el AIRE; para añadir otro gas basta con crear otro
-GasIdealPolinomico con sus coeficientes, sin tocar el resto del modelo.
+le pida. Hay dos: el AIRE, gas ideal, y la SAL_SOLAR, líquido de sales
+fundidas para el receptor final. Para añadir otro basta con crear otro
+GasIdealPolinomico o LiquidoPolinomico con sus coeficientes, sin tocar el resto
+del modelo.
 
 UNIDADES. Todo en SI y las TEMPERATURAS EN KELVIN, sin excepción. El resto de
 módulos del TFG manejan grados Celsius en las condiciones de proceso, así que al
@@ -256,6 +258,121 @@ class GasIdealPolinomico:
 
 
 # =============================================================================
+# Fluido genérico: líquido con propiedades polinómicas en grados Celsius
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class LiquidoPolinomico:
+    """Líquido incompresible cuyas rho, cp, k y mu son polinomios en t [C].
+
+    Es la forma en que dan las propiedades las fichas de sales fundidas, en
+    Celsius y no en Kelvin; los polinomios se evalúan en t = T - CERO_CELSIUS,
+    pero la interfaz es la misma que la de GasIdealPolinomico, con T en K, para
+    que el receptor no distinga un fluido de otro.
+
+    A diferencia del gas, aquí todos los métodos admiten también arrays de numpy
+    (el receptor final resuelve las columnas de una fila de una vez). La
+    presión se acepta y se ignora: el líquido se trata como incompresible.
+    """
+
+    nombre: str
+    coef_rho: Sequence[float]   # rho [kg/m3]    = poly(t)
+    coef_cp: Sequence[float]    # cp  [J/(kg*K)] = poly(t)
+    coef_k: Sequence[float]     # k   [W/(m*K)]  = poly(t)
+    coef_mu: Sequence[float]    # mu  [Pa*s]     = poly(t)
+    T_min: float                # Límite inferior de uso [K]
+    T_max: float                # Límite superior de uso [K]
+    fuente: str = ""
+
+    def _verificar(self, T):
+        """Impide salirse del rango de uso. Vale para escalares y arrays."""
+        bajo = T.min() if hasattr(T, "min") else T
+        alto = T.max() if hasattr(T, "max") else T
+        if self.T_min <= bajo and alto <= self.T_max:
+            return
+        mensaje = (
+            f"{self.nombre}: T entre {bajo - CERO_CELSIUS:.2f} y "
+            f"{alto - CERO_CELSIUS:.2f} C, fuera del rango de uso "
+            f"[{self.T_min - CERO_CELSIUS:.0f}, {self.T_max - CERO_CELSIUS:.0f}] C."
+        )
+        if EXTRAPOLAR:
+            warnings.warn(mensaje + " Se extrapola.", stacklevel=3)
+        else:
+            raise ValueError(mensaje)
+
+    def rho(self, T, p=P_ATM):
+        """Densidad [kg/m3]. No depende de p."""
+        self._verificar(T)
+        return _horner(self.coef_rho, T - CERO_CELSIUS)
+
+    def cp(self, T):
+        """Calor específico [J/(kg*K)]."""
+        self._verificar(T)
+        return _horner(self.coef_cp, T - CERO_CELSIUS)
+
+    def k(self, T):
+        """Conductividad térmica [W/(m*K)]."""
+        self._verificar(T)
+        return _horner(self.coef_k, T - CERO_CELSIUS)
+
+    def mu(self, T):
+        """Viscosidad dinámica [Pa*s]."""
+        self._verificar(T)
+        return _horner(self.coef_mu, T - CERO_CELSIUS)
+
+    def Pr(self, T):
+        """Número de Prandtl, cp*mu/k [-]."""
+        return self.cp(T) * self.mu(T) / self.k(T)
+
+    def propiedades(self, T, p=P_ATM):
+        """Las cuatro propiedades de una vez, en un objeto Propiedades."""
+        self._verificar(T)
+        t = T - CERO_CELSIUS
+        return Propiedades(
+            fluido=self.nombre, T=T, p=p,
+            rho=_horner(self.coef_rho, t),
+            cp=_horner(self.coef_cp, t),
+            k=_horner(self.coef_k, t),
+            mu=_horner(self.coef_mu, t),
+        )
+
+    def h(self, T):
+        """Entalpía específica referida a T_REF_ENTALPIA [J/kg].
+
+        Primitiva exacta del polinomio de cp. Como T_REF_ENTALPIA es 0 C, en la
+        variable t la primitiva se anula en el origen y no hay que restar nada.
+        """
+        self._verificar(T)
+        t = T - CERO_CELSIUS
+        return sum(c * t ** (i + 1) / (i + 1) for i, c in enumerate(self.coef_cp))
+
+    def T_desde_h(self, h):
+        """Temperatura con la entalpía h [K]. Inversa de h(T), por Newton.
+
+        h(T) es creciente y casi lineal (cp varía un 3 % en todo el rango de la
+        sal), así que Newton desde la estimación con cp constante converge en
+        dos o tres pasos. Admite arrays.
+        """
+        T = T_REF_ENTALPIA + h / self.coef_cp[0]
+        for _ in range(30):
+            t = T - CERO_CELSIUS
+            h_T = sum(c * t ** (i + 1) / (i + 1) for i, c in enumerate(self.coef_cp))
+            paso = (h_T - h) / _horner(self.coef_cp, t)
+            T = T - paso
+            if (abs(paso).max() if hasattr(paso, "max") else abs(paso)) < 1e-10:
+                break
+        self._verificar(T)
+        return T
+
+    def cp_medio(self, T1, T2):
+        """Calor específico medio entre T1 y T2 [J/(kg*K)]."""
+        if abs(T2 - T1) < 1e-9:
+            return self.cp(T1)
+        return (self.h(T2) - self.h(T1)) / (T2 - T1)
+
+
+# =============================================================================
 # Fluidos disponibles
 # =============================================================================
 
@@ -276,7 +393,31 @@ AIRE = GasIdealPolinomico(
     fuente="Lemmon et al. (2000, 2004), vía CoolProp 7.2.0",
 )
 
-FLUIDOS = {"aire": AIRE}
+# Sal solar: 60 % NaNO3 y 40 % KNO3 en masa, el fluido de Solar Two. Las cuatro
+# correlaciones son las del documento de diseño de Sandia,
+#
+#     A.B. Zavoico, "Solar Power Tower Design Basis Document, Revision 0",
+#     Sandia National Laboratories, SAND2001-2100 (2001), apartado de la sal.
+#
+# con t en C: rho = 2090 - 0.636*t, cp = 1443 + 0.172*t,
+# k = 0.443 + 1.9e-4*t y mu = 22.714 - 0.120*t + 2.281e-4*t^2 - 1.474e-7*t^3
+# en mPa*s (aquí pasada a Pa*s). El documento las da para 300-600 C. Se deja
+# usar desde 260 C porque la entrada del receptor está en 290 C, 10 grados por
+# debajo del ajuste; la sal empieza a solidificar en torno a 238 C, así que
+# sigue siendo líquido. Por encima de 600 C la sal se descompone: ahí el límite
+# no es del ajuste sino del fluido.
+SAL_SOLAR = LiquidoPolinomico(
+    nombre="Sal solar",
+    coef_rho=(2090.0, -0.636),
+    coef_cp=(1443.0, 0.172),
+    coef_k=(0.443, 1.9e-4),
+    coef_mu=(22.714e-3, -0.120e-3, 2.281e-7, -1.474e-10),
+    T_min=CERO_CELSIUS + 260.0,
+    T_max=CERO_CELSIUS + 600.0,
+    fuente="Zavoico, SAND2001-2100 (2001)",
+)
+
+FLUIDOS = {"aire": AIRE, "sal solar": SAL_SOLAR}
 
 
 def fluido(nombre="aire"):

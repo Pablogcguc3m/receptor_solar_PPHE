@@ -30,6 +30,14 @@ temperatura del aire y la de la pared sobre la placa, el perfil de salida en
   se regula con el factor `lambda`. Da el campo de temperaturas, el perfil
   `T(x)` en `y = L`, la pérdida de carga y una tabla de rendimiento frente a la
   temperatura de entrada.
+- **`receptor_octogonal.py`**: el caso de estudio final. Receptor octogonal de
+  8 pillow plates de 10.5 m con sal solar (propiedades de Zavoico), resuelto
+  por simetría sobre medio receptor: 4 placas en serie, con mezcla completa
+  entre placas. Fija la entrada (290 C) y la salida (565 C) y despeja el gasto.
+  Mismo balance por porción que `receptor.py`, vectorizado por filas. Da los
+  campos de temperatura de cada placa, la pérdida de carga y, opcionalmente,
+  un barrido de `lambda` (`BARRIDO_LAMBDA`). `receptor.py` se mantiene como
+  modelo de demostración con aire.
 - **`documentacion_receptor.tex`**: documentación del módulo anterior.
 
 ### `modelo_termohidraulico/` — el canal de la pillow plate
