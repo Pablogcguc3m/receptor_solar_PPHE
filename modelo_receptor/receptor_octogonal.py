@@ -154,6 +154,9 @@ LAMBDAS = (1.0, 0.99, 0.95, 0.9, 0.7, 0.0)   # Barrido de lambda
 GRAVEDAD = 9.80665            # [m/s2]
 T_PELICULA_MAX = C + 600.0    # Descomposición de la sal: límite de la pared mojada [K]
 T_ACERO_MAX = 1150.0          # Límite de servicio del AISI 321, el de receptor.py [K]
+
+CMAP_SAL = "turbo"          # Escalas de color de las figuras: distintas para que
+CMAP_PARED = mp.CMAP          # los campos de sal y pared no se confundan ("hot")
 TOL_FILA = 1e-9               # Tolerancia de Newton en la salida de cada porción [K]
 
 BARRIDO_LAMBDA = False        # True: resuelve también LAMBDAS y saca su tabla (x6 de tiempo)
@@ -791,32 +794,57 @@ def dibujar_mapa(res, plt):
     return fig
 
 
-def dibujar_placas(res, plt):
-    """Temperatura de la sal y de la pared expuesta en cada placa."""
+def _barra_acotada(barra, vmin, vmax, n=6, formato="{:.0f}"):
+    """Marcas de la barra de color con el mínimo y el máximo del campo en los extremos.
+
+    Las marcas intermedias son las redondas de MaxNLocator; se quitan las que
+    caen a menos de un 6 % del rango de un extremo, para que no se pisen.
+    """
+    from matplotlib.ticker import MaxNLocator
+
+    margen = 0.06 * (vmax - vmin)
+    medias = [t for t in MaxNLocator(n).tick_values(vmin, vmax)
+              if vmin + margen < t < vmax - margen]
+    marcas = [vmin, *medias, vmax]
+    barra.set_ticks(marcas, labels=[formato.format(t) for t in marcas])
+
+
+def _dibujar_campo(res, plt, atributo, nombre, cmap, ancho_placa=2.0):
+    """Un campo de temperatura en las placas, a escala real (aspect='equal').
+
+    Cada placa es 10.5/3.25 = 3.2 veces más alta que ancha; ancho_placa es el
+    ancho en pulgadas de cada una en la figura, y el alto sale de la proporción.
+    """
     r, m = res.receptor, res.receptor.mapa
     n = m.n_placas
-    fig, ejes = plt.subplots(2, n, figsize=(3.0 * n + 1.5, 9.5), sharey=True,
-                             layout="constrained")
-    campos = (("T_fluido", "Sal", mp.CMAP), ("T_pared", "Pared expuesta", mp.CMAP))
-    for fila, (atributo, nombre, cmap) in enumerate(campos):
-        valores = [getattr(p, atributo) - C for p in res.placas]
-        vmin, vmax = min(v.min() for v in valores), max(v.max() for v in valores)
-        for p, v, ax in zip(res.placas, valores, ejes[fila]):
-            im = ax.imshow(v, cmap=cmap, origin="lower", aspect="auto", vmin=vmin, vmax=vmax,
-                           extent=(p.x0, p.x0 + m.w, 0.0, m.L), interpolation="nearest")
-            flecha = "sube" if p.sube else "baja"
-            # Título en negrita y, debajo, el rango en redonda
-            ax.set_title(f"Placa {p.numero} ({flecha})", pad=18)
-            ax.text(0.5, 1.012, f"{nombre}: {v.min():.0f}–{v.max():.0f} °C",
-                    transform=ax.transAxes, ha="center", va="bottom", fontsize=10)
-            if fila == len(campos) - 1:
-                ax.set_xlabel("$x$ [m]")
-        ejes[fila][0].set_ylabel("$y$, altura [m]")
-        fig.colorbar(im, ax=list(ejes[fila]), shrink=0.9,
-                     label=f"$T$ {nombre.lower()} [°C]")
-    fig.suptitle(rf"Campos de temperatura ($\lambda$ = {r.lam:.2f}, $G$ = {res.G:.1f} kg/s "
-                 f"por mitad)")
+    alto_placa = ancho_placa * m.L / m.w
+    fig, ejes = plt.subplots(1, n, sharey=True, layout="constrained",
+                             figsize=(n * ancho_placa + 1.6, alto_placa + 1.1))
+    valores = [getattr(p, atributo) - C for p in res.placas]
+    vmin, vmax = min(v.min() for v in valores), max(v.max() for v in valores)
+    for p, v, ax in zip(res.placas, valores, ejes):
+        im = ax.imshow(v, cmap=cmap, origin="lower", aspect="equal", vmin=vmin,
+                       vmax=vmax, extent=(p.x0, p.x0 + m.w, 0.0, m.L),
+                       interpolation="nearest")
+        flecha = "sube" if p.sube else "baja"
+        # Título en negrita y, debajo, el rango en redonda
+        ax.set_title(f"Placa {p.numero} ({flecha})", pad=18)
+        ax.text(0.5, 1.012, f"{v.min():.0f}–{v.max():.0f} °C",
+                transform=ax.transAxes, ha="center", va="bottom", fontsize=10)
+        ax.set_xlabel("$x$ [m]")
+        ax.xaxis.set_major_locator(plt.MultipleLocator(1.0))
+    ejes[0].set_ylabel("$y$, altura [m]")
+    barra = fig.colorbar(im, ax=list(ejes), shrink=0.8, label=f"$T$ {nombre.lower()} [°C]")
+    _barra_acotada(barra, vmin, vmax)
+    fig.suptitle(rf"Temperatura de la {nombre.lower()} ($\lambda$ = {r.lam:.2f}, "
+                 rf"$G$ = {res.G:.1f} kg/s por mitad)")
     return fig
+
+
+def dibujar_placas(res, plt):
+    """Temperatura de la sal y de la pared expuesta, una figura para cada una."""
+    return (_dibujar_campo(res, plt, "T_fluido", "Sal", CMAP_SAL),
+            _dibujar_campo(res, plt, "T_pared", "Pared expuesta", CMAP_PARED))
 
 
 # =============================================================================
