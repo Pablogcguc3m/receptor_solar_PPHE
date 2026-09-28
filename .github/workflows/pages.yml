@@ -48,6 +48,10 @@ jobs:
       - name: Versionar fisica.js
         run: sed -i "s|src=\"fisica.js\"|src=\"fisica.js?v=${GITHUB_SHA::7}\"|" web/index.html && grep -q "fisica.js?v=" web/index.html
 
+      # Lo mismo para la pagina del receptor octogonal y su nucleo de calculo
+      - name: Versionar fisica_octogonal.js
+        run: sed -i "s|src=\"fisica_octogonal.js\"|src=\"fisica_octogonal.js?v=${GITHUB_SHA::7}\"|" web/octogonal/index.html && grep -q "fisica_octogonal.js?v=" web/octogonal/index.html
+
       - name: Empaquetar la carpeta web/
         uses: actions/upload-pages-artifact@v3
         with:

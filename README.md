@@ -4,14 +4,19 @@ Diseño de un receptor solar basado en intercambiadores de tipo "pillow-plate"
 para comparar sus prestaciones con otras alternativas de intercambiadores de
 calor.
 
-## Página interactiva
+## Páginas interactivas
 
-**https://pablogcguc3m.github.io/receptor_solar_PPHE/**
+Las dos corren el modelo en el navegador, sin servidor ni instalar nada.
 
-Reproduce el modelo nodal en el navegador y deja mover sus parámetros para ver
-cómo cambia la distribución de calor: el mapa de flujo incidente, la
-temperatura del aire y la de la pared sobre la placa, el perfil de salida en
-`y = L` y el recorrido de cada columna. No necesita servidor ni instalar nada.
+- **https://pablogcguc3m.github.io/receptor_solar_PPHE/** — la placa con aire
+  (`receptor.py`), para demostraciones: el mapa de flujo incidente, la
+  temperatura del aire y la de la pared, el perfil de salida en `y = L` y el
+  recorrido de cada columna.
+- **https://pablogcguc3m.github.io/receptor_solar_PPHE/octogonal/** — el caso
+  de estudio final (`receptor_octogonal.py`): el receptor octogonal de sal
+  solar, con la geometría del panel dentro de las correlaciones de Piper, las
+  pérdidas y la mancha como parámetros. Da el gasto, los campos de sal, pared
+  expuesta y pared mojada, el recorrido de la sal y el reparto placa a placa.
 
 ## Estructura
 
@@ -54,5 +59,6 @@ temperatura del aire y la de la pared sobre la placa, el perfil de salida en
 ### `web/` — la página
 
 HTML, CSS y JavaScript sin dependencias. `fisica.js` es una traducción del
-núcleo de cálculo de `modelo_receptor/`, validada nodo a nodo contra el
-original. Se publica sola al empujar cambios a `main`.
+núcleo de cálculo de `receptor.py` y `octogonal/fisica_octogonal.js`, la de
+`receptor_octogonal.py`; las dos validadas nodo a nodo contra el original. Se
+publica sola al empujar cambios a `main`.
