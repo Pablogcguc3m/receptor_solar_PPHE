@@ -45,6 +45,8 @@
   --crit-tinte:rgba(255,107,90,.12);
   --ok:#6FD08C;
   --ok-tinte:rgba(111,208,140,.12);
+  --atencion:#FFC857;
+  --atencion-tinte:rgba(255,200,87,.09);
 
   --r:10px;
   --sans:"Inter",system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
@@ -193,6 +195,23 @@ input[type=range]:active::-webkit-slider-thumb{transform:scale(1.25)}
 .aviso .rotulo{color:var(--crit)}
 .aviso p{font-size:13.5px; color:var(--ink-2)}
 .aviso strong{color:var(--ink); font-weight:500}
+
+/* Aviso de validez: el calculo sale, pero con las correlaciones fuera de su
+   rango. Ambar, no rojo: no es un punto de trabajo imposible, es un numero
+   que hay que leer con cuidado. */
+.validez{
+  display:none; background:var(--atencion-tinte); border:1px solid rgba(255,200,87,.42);
+  border-radius:var(--r); padding:14px 16px 15px; margin-bottom:22px;
+}
+.validez[data-visible="1"]{display:block}
+.validez .rotulo{color:var(--atencion); display:block; margin-bottom:8px}
+.validez ul{margin:0; padding-left:18px; font-size:13.5px; color:var(--ink-2)}
+.validez li{margin-bottom:6px}
+.validez li:last-child{margin-bottom:0}
+.validez strong{color:var(--ink); font-weight:500}
+.validez .consejo{margin-top:10px; font-size:12.5px; color:var(--muted)}
+.dato.fuera .k{color:var(--atencion)}
+.dato.fuera .v, .dato.fuera .v .u{color:var(--atencion)}
 
 /* ----------------------------------------------------------------- kpis -- */
 .kpis{display:grid; grid-template-columns:repeat(6,1fr); gap:1px; margin-bottom:1px;
@@ -485,6 +504,13 @@ img{max-width:100%}
       <p><strong id="aviso-msg"></strong> <span id="aviso-consejo"></span></p>
     </div>
 
+    <div class="validez" id="validez" role="status">
+      <span class="rotulo">Correlaciones fuera de su rango de validez</span>
+      <ul id="validez-lista"></ul>
+      <p class="consejo">A gasto fijo, Re = 2<i>G</i>/(<i>w</i>·<i>μ</i>) en este canal: no depende de <i>b</i><sub>i</sub> ni de los pasos de soldadura.
+        Solo baja con menos gasto por metro de placa (más caminos en paralelo, placas más anchas, menos potencia o más salto de temperatura) o con una sal más viscosa.</p>
+    </div>
+
     <div id="resultados">
       <section class="kpis" aria-label="Balance global">
         <div class="kpi">
@@ -523,7 +549,8 @@ img{max-width:100%}
         <div class="dato"><span class="k">Placa</span><span class="v"><span id="d-placa">–</span> <span class="u">m</span></span></div>
         <div class="dato"><span class="k">σ<sub>x</sub> · σ<sub>y</sub></span><span class="v"><span id="d-sigma">–</span> <span class="u">m</span></span></div>
         <div class="dato"><span class="k">u canal</span><span class="v"><span id="d-u">–</span> <span class="u">m/s</span></span></div>
-        <div class="dato"><span class="k">Re</span><span class="v"><span id="d-re">–</span></span></div>
+        <div class="dato" id="dato-re" title=""><span class="k">Re</span><span class="v"><span id="d-re">–</span></span></div>
+        <div class="dato" id="dato-pr" title=""><span class="k">Pr</span><span class="v"><span id="d-pr">–</span></span></div>
         <div class="dato"><span class="k">h interno</span><span class="v"><span id="d-h">–</span> <span class="u">kW/m²K</span></span></div>
         <div class="dato"><span class="k">Malla por placa</span><span class="v"><span id="d-malla">–</span></span></div>
         <div class="dato"><span class="k">Celda</span><span class="v"><span id="d-celda">–</span></span></div>
@@ -666,6 +693,7 @@ img{max-width:100%}
               <li>La <strong>salida está impuesta</strong>: el gasto sale del balance global, <i>G</i> = <i>Q</i><sub>útil</sub>/Δ<i>h</i>, iterado porque las pérdidas dependen de la pared.</li>
               <li>Dentro de cada placa, el método de la placa con aire: una porción por celda de soldadura, columnas <strong>adiabáticas</strong> ponderadas en entalpía con la <strong>mezcla completa</strong> mediante <i>λ</i>.</li>
               <li>Coeficiente interno por la ec. (20) con las constantes de Piper, sección de paso de la ec. (16) sin soldaduras de borde y un <strong>único canal</strong> por placa que lleva todo el gasto de la mitad.</li>
+              <li>Las correlaciones de Piper valen para <strong>1 000 ≤ Re ≤ 8 000</strong> y 1 ≤ Pr ≤ 150, y las ecs. (20)–(21) de Arsenyeva para 9 500 ≤ Re ≤ 30 000. Fuera de esos rangos la página avisa en ámbar y marca Re y Pr en la tira de datos, pero sigue calculando: los resultados son una extrapolación.</li>
               <li>Propiedades de la sal solar (60 % NaNO₃, 40 % KNO₃) por las correlaciones de <strong>Zavoico</strong>, SAND2001-2100, en función de la temperatura. La sal es incompresible.</li>
               <li><strong>Pérdida de carga</strong> por la ec. (19) fila a fila, con zonas de distribución a la entrada y salida de cada placa; la hidrostática se da aparte y casi se anula entre placas que suben y bajan.</li>
               <li>Sin reradiación entre porciones, sin conducción lateral más allá de la que recoge <i>λ</i> y con el acero a <code>k</code> = 20 W/(m·K) constante.</li>
@@ -885,6 +913,7 @@ function calcular(){
     var r;
     try { r = ROC.resolver(cfg); }
     catch (err){
+      $('validez').dataset.visible = '0';
       $('aviso').dataset.visible = '1';
       $('aviso-msg').textContent = err.message || 'El modelo no converge con estos parámetros.';
       $('aviso-consejo').textContent = err.consejo || '';
@@ -1371,8 +1400,45 @@ document.addEventListener('click', function(e){
   if (TITULOS_MAPA[que]) descargarMapa(que); else descargarGrafica(que);
 });
 
+/* ---------------------------------------------------------- validez ----- */
+// Un punto por cada rango incumplido. El de Piper es el que importa: sus
+// constantes son las del modelo. El de Arsenyeva se da como referencia.
+// Cifras enteras con espacio fino de miles (9 500, 136 107); Pr con un decimal
+function numeroRango(v){
+  if (v < 100) return n(v, 1);
+  return String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+function pintarValidez(r){
+  var v = r.validez, lista = $('validez-lista');
+  lista.innerHTML = v.avisos.map(function(a){
+    var pct = a.fraccion >= 0.9995 ? 'en todas las porciones'
+      : 'en el ' + n(a.fraccion * 100, a.fraccion < 0.1 ? 1 : 0) + ' % de las porciones';
+    var cifras = a.magnitud + ' de ' + numeroRango(a.valor[0]) + ' a ' + numeroRango(a.valor[1]);
+    var rango = numeroRango(a.rango[0]) + '–' + numeroRango(a.rango[1]);
+    if (a.grave){
+      var donde = a.sentido === 'en parte fuera' ? 'fuera del rango ' : a.sentido + ' del rango ';
+      return '<li><strong>' + a.magnitud + ' fuera del rango de ' + a.fuente + '</strong> (' + rango +
+        '): el canal trabaja con ' + cifras + ', ' + donde + pct + '. ' +
+        'Se están extrapolando la ' + a.ecuaciones + ', y con ellas h y la pérdida de carga.</li>';
+    }
+    return '<li>Fuera también del rango de ' + a.fuente + ' (' + a.magnitud + ' ' + rango + ', ' +
+      a.ecuaciones + ') ' + pct + '.</li>';
+  }).join('');
+  $('validez').dataset.visible = v.avisos.length ? '1' : '0';
+
+  var P = ROC.RANGOS.piper;
+  var reFuera = v.fueraPiperRe > 0, prFuera = v.fueraPiperPr > 0;
+  $('dato-re').classList.toggle('fuera', reFuera);
+  $('dato-pr').classList.toggle('fuera', prFuera);
+  $('dato-re').title = 'Rango de Piper: ' + numeroRango(P.Re[0]) + '–' + numeroRango(P.Re[1]) +
+    (reFuera ? ' · fuera' : ' · dentro');
+  $('dato-pr').title = 'Rango de Piper: ' + n(P.Pr[0], 0) + '–' + n(P.Pr[1], 0) +
+    (prFuera ? ' · fuera' : ' · dentro');
+}
+
 /* ---------------------------------------------------------- pintado ----- */
 function pintar(r){
+  pintarValidez(r);
   var css = getComputedStyle(document.body);
 
   $('k-G').textContent = n(2 * r.G, 1);
@@ -1398,7 +1464,8 @@ function pintar(r){
   $('d-placa').textContent = n(r.L, 1) + ' × ' + n(r.w, 3);
   $('d-sigma').textContent = n(r.mapa.sigma_x, 2) + ' · ' + n(r.mapa.sigma_y, 2);
   $('d-u').textContent = n(r.entrada.u, 1) + ' → ' + n(r.salida.u, 1);
-  $('d-re').textContent = nexp(r.entrada.Re) + ' → ' + nexp(r.salida.Re);
+  $('d-re').textContent = numeroRango(r.validez.Re[0]) + ' – ' + numeroRango(r.validez.Re[1]);
+  $('d-pr').textContent = n(r.validez.Pr[0], 1) + ' – ' + n(r.validez.Pr[1], 1);
   $('d-h').textContent = n(r.entrada.h / 1e3, 1) + ' → ' + n(r.salida.h / 1e3, 1);
   $('d-malla').textContent = r.M + ' × ' + r.N;
   $('d-celda').textContent = r.n.familia.replace('celda ', '');

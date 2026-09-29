@@ -77,6 +77,21 @@
   var TOL_FILA = 1e-9;                   // Newton en la salida de cada porcion [K]
   var N_PLACAS = 8;
 
+  // Rangos de validez de las correlaciones, tal y como los dan los articulos
+  // (Fuentes/ del TFG):
+  //  - M. Piper et al., Int. J. Therm. Sci. 120 (2017) 459-468, tablas 2, 3 y
+  //    4: friccion (ec. 2) y Nusselt (ec. 6) para 1000 <= Re <= 8000 y
+  //    1 <= Pr <= 150. Las constantes n1..n5 del modelo son las de esas tablas,
+  //    asi que este es el rango que gobierna el calculo.
+  //  - O. Arsenyeva et al., Appl. Therm. Eng. 147 (2019) 579-591: las ecs. (20)
+  //    y (21), y la friccion del canal externo, para 9500 <= Re <= 30000.
+  var RANGOS = {
+    piper: { nombre: 'Piper et al. (2017)', Re: [1000, 8000], Pr: [1, 150],
+             ecuaciones: 'fricción y el Nusselt del canal interno (ecs. 2 y 6, tablas 2 y 3)' },
+    arsenyeva: { nombre: 'Arsenyeva et al. (2019)', Re: [9500, 30000], Pr: null,
+                 ecuaciones: 'ecs. (20) y (21)' }
+  };
+
   // round() de Python: los empates van al PAR (262.5 -> 262), no hacia arriba
   // como Math.round. La malla es M = round(w/s_T) y N = round(L/s_2l), y con
   // pasos redondos (L = 10.5 m, s_2l = 40 mm) el empate exacto se da.
@@ -407,6 +422,9 @@
       // -- Perdida de carga: ec. (19) fila a fila, mas la hidrostatica ---------
       var G2 = Math.pow(G / seccion, 2);
       var fr = 0, di = 0, ac = 0, hi = 0;
+      // Validez: Re y Pr de cada porcion frente a los rangos de las correlaciones
+      var val = { Re: [Infinity, -Infinity], Pr: [Infinity, -Infinity],
+                  fueraPiperRe: 0, fueraPiperPr: 0, fueraArsenyevaRe: 0 };
       for (i = 0; i < M; i++) {
         var frI = 0, hiI = 0;
         for (j = 0; j < N; j++) {
@@ -415,6 +433,13 @@
           var Re = pr.rho * u * de / pr.mu;
           frI += n.n1 * Math.pow(Re, n.n2) * dy / de * pr.rho * u * u / 2;
           hiI += pr.rho * dy;
+          if (Re < val.Re[0]) val.Re[0] = Re;
+          if (Re > val.Re[1]) val.Re[1] = Re;
+          if (pr.Pr < val.Pr[0]) val.Pr[0] = pr.Pr;
+          if (pr.Pr > val.Pr[1]) val.Pr[1] = pr.Pr;
+          if (Re < RANGOS.piper.Re[0] || Re > RANGOS.piper.Re[1]) val.fueraPiperRe++;
+          if (pr.Pr < RANGOS.piper.Pr[0] || pr.Pr > RANGOS.piper.Pr[1]) val.fueraPiperPr++;
+          if (Re < RANGOS.arsenyeva.Re[0] || Re > RANGOS.arsenyeva.Re[1]) val.fueraArsenyevaRe++;
         }
         var v_ent = 1.0 / rho(entradas[sube ? 0 : N - 1][i]);
         var v_sal = 1.0 / rho(T[i]);
@@ -430,7 +455,7 @@
         T_adiabatica: T_adiab, entradas: entradas, q_nodo: q_nodo, flujo: flujo,
         Q_inc: Q_inc, Q_util: Q_util, Q_conv: Q_conv, Q_rad: Q_rad, Q_refl: (1 - alfa) * Q_inc,
         dp_friccion: fr / M, dp_distribucion: di / M, dp_aceleracion: ac / M,
-        dp_hidrostatica: hi / M
+        dp_hidrostatica: hi / M, validez: val
       };
     }
 
@@ -496,6 +521,7 @@
     res.salida = hInterno(cfg.T_sal, G);
     res.rhoMedia = 0.5 * (rho(cfg.T_ent) + rho(cfg.T_sal));
     res.potenciaBombeo = G * res.dp / res.rhoMedia;              // de la mitad [W]
+    res.validez = validez(placas, M * N * nPl);
 
     // Campos del receptor desarrollado, N filas x (nPl*M) columnas
     var campos = { flujo: [], sal: [], pared: [], pelicula: [] }, j, i, k2;
@@ -540,7 +566,50 @@
     return res;
   }
 
+  // ===========================================================================
+  // Validez de las correlaciones
+  // ===========================================================================
+
+  // Junta lo de las cuatro placas y redacta un aviso por cada rango que se
+  // incumple. No para el calculo: el modelo sigue dando numeros, pero con Nu y
+  // f extrapolados, y eso hay que saberlo al leerlos.
+  function validez(placas, total) {
+    var v = { Re: [Infinity, -Infinity], Pr: [Infinity, -Infinity],
+              fueraPiperRe: 0, fueraPiperPr: 0, fueraArsenyevaRe: 0 };
+    placas.forEach(function (p) {
+      var w = p.validez;
+      v.Re[0] = Math.min(v.Re[0], w.Re[0]); v.Re[1] = Math.max(v.Re[1], w.Re[1]);
+      v.Pr[0] = Math.min(v.Pr[0], w.Pr[0]); v.Pr[1] = Math.max(v.Pr[1], w.Pr[1]);
+      v.fueraPiperRe += w.fueraPiperRe; v.fueraPiperPr += w.fueraPiperPr;
+      v.fueraArsenyevaRe += w.fueraArsenyevaRe;
+    });
+    v.fueraPiperRe /= total; v.fueraPiperPr /= total; v.fueraArsenyevaRe /= total;
+
+    var avisos = [];
+    function sentido(valor, rango) {
+      return valor[0] > rango[1] ? 'por encima' : valor[1] < rango[0] ? 'por debajo' : 'en parte fuera';
+    }
+    if (v.fueraPiperRe > 0) {
+      avisos.push({ clave: 'piperRe', grave: true, fuente: RANGOS.piper.nombre,
+        magnitud: 'Re', rango: RANGOS.piper.Re, valor: v.Re, fraccion: v.fueraPiperRe,
+        sentido: sentido(v.Re, RANGOS.piper.Re), ecuaciones: RANGOS.piper.ecuaciones });
+    }
+    if (v.fueraPiperPr > 0) {
+      avisos.push({ clave: 'piperPr', grave: true, fuente: RANGOS.piper.nombre,
+        magnitud: 'Pr', rango: RANGOS.piper.Pr, valor: v.Pr, fraccion: v.fueraPiperPr,
+        sentido: sentido(v.Pr, RANGOS.piper.Pr), ecuaciones: RANGOS.piper.ecuaciones });
+    }
+    if (v.fueraArsenyevaRe > 0) {
+      avisos.push({ clave: 'arsenyevaRe', grave: false, fuente: RANGOS.arsenyeva.nombre,
+        magnitud: 'Re', rango: RANGOS.arsenyeva.Re, valor: v.Re, fraccion: v.fueraArsenyevaRe,
+        sentido: sentido(v.Re, RANGOS.arsenyeva.Re), ecuaciones: RANGOS.arsenyeva.ecuaciones });
+    }
+    v.avisos = avisos;
+    return v;
+  }
+
   var ROC = {
+    RANGOS: RANGOS,
     CERO_CELSIUS: CERO_CELSIUS, SIGMA: SIGMA, T_AMB: T_AMB, T_CIELO: T_CIELO,
     LIMITE_AISI321: LIMITE_AISI321, T_PELICULA_MAX: T_PELICULA_MAX, K_ACERO: K_ACERO,
     ZETA_DZ: ZETA_DZ, N_PLACAS: N_PLACAS, LAMBDA: 0.7, SAL: SAL,
