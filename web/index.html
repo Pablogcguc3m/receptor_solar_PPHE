@@ -1,1680 +1,914 @@
 <!DOCTYPE html>
 <!--
-  Pagina interactiva del modelo nodal del receptor. Documento HTML completo y
-  autonomo: se sirve tal cual desde GitHub Pages, sin build ni servidor.
+  Portada del proyecto. Documento HTML autonomo, sin build ni dependencias: se
+  sirve tal cual desde GitHub Pages. Enlaza las dos paginas interactivas:
+  aire/ (la placa de demostracion) y octogonal/ (el caso de estudio final).
 
-  El envoltorio (doctype, html, head, body, charset, viewport) y las reglas de
-  reset que hay al final de la hoja de estilos NO son decorativos: la version
-  publicada como artefacto en claude.ai los recibia de la plataforma, y sin
-  ellos la pagina sale en quirks mode, con los acentos rotos y sin responsive.
+  Todo lo que se mueve aqui es ilustrativo: no llama a fisica.js. La placa del
+  encabezado usa un modelo de juguete (adveccion + calentamiento por celda) para
+  que el calor se reparta como en un receptor de verdad, pero sus cifras no son
+  las del modelo. Las cifras rigurosas estan en las paginas de los modelos.
 -->
 <html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Receptor solar PPHE</title>
+<meta name="description" content="Receptor solar de pillow plates: el sol calienta sal fundida dentro de placas de acero infladas. Modelos interactivos que corren en el navegador.">
 <link rel="icon" type="image/svg+xml" href="icono.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 
 <style>
 /* ---------------------------------------------------------------- tokens --
-   Tema unico oscuro, deliberado: negro puro y blanco puro, como la referencia.
-   No hay bloque de tema claro a proposito; la pagina se compromete con un solo
-   aspecto y lo pinta todo explicitamente.
-
-   Los nombres de las variables NO se pueden cambiar: el script lee --fluido,
-   --pared, --crit, --linea, --linea-fuerte, --muted, --ink-2 y --surface para
-   dibujar los mapas y las graficas.
-------------------------------------------------------------------------- */
+   Mismos tokens que las paginas de los modelos: negro puro, blanco puro, azul
+   para el fluido frio y naranja para la pared caliente.                     */
 :root{
   color-scheme:dark;
-  padding-top:env(safe-area-inset-top,0px);
-  padding-bottom:env(safe-area-inset-bottom,0px);
-
-  --ground:#000000;
-  --surface:#0A0A0A;
-  --surface-2:#141414;
-  --hueco:rgba(255,255,255,.07);
-  --ink:#FFFFFF;
-  --ink-2:rgba(255,255,255,.74);
-  --muted:rgba(255,255,255,.50);
-  --linea:rgba(255,255,255,.12);
-  --linea-fuerte:rgba(255,255,255,.28);
-  --accent:#FFFFFF;
-  --accent-tinte:rgba(255,255,255,.10);
-
-  /* Series de las graficas. Validadas para daltonismo sobre fondo negro. */
-  --fluido:#7FB4FF;
-  --pared:#FF9E6B;
-  --crit:#FF6B5A;
-  --crit-tinte:rgba(255,107,90,.12);
-  --ok:#6FD08C;
-  --ok-tinte:rgba(111,208,140,.12);
-
-  --r:10px;
-  /* Inter sustituye a la tipografia propietaria de la referencia: es el
-     neo-grotesco libre mas proximo. El caracter lo da el tracking negativo. */
+  --ground:#000; --surface:#0A0A0A; --surface-2:#141414;
+  --ink:#fff; --ink-2:rgba(255,255,255,.74); --muted:rgba(255,255,255,.5);
+  --linea:rgba(255,255,255,.12); --linea-fuerte:rgba(255,255,255,.28);
+  --fluido:#7FB4FF; --pared:#FF9E6B; --crit:#FF6B5A; --ok:#6FD08C;
+  --sol:#FFD9A0;
+  --r:14px;
   --sans:"Inter",system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
 }
-
-/* El campo de brasas cubre toda la pagina, fijo al viewport y no al documento:
-   asi ocupa memoria constante por alta que sea la pagina. Va por detras de todo
-   y no intercepta el raton. Los paneles de contenido son opacos, de modo que las
-   brasas solo asoman por los huecos, los margenes y la portada. */
-#brasas{
-  position:fixed; inset:0; width:100%; height:100%;
-  z-index:0; pointer-events:none; display:block;
-}
-
-/* ----------------------------------------------------------------- base -- */
 *{box-sizing:border-box}
+html{scroll-behavior:smooth}
 body{
   margin:0; background:var(--ground); color:var(--ink);
-  font-family:var(--sans); font-size:15px; line-height:1.6;
-  font-variant-numeric:tabular-nums;
-  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+  font-family:var(--sans); font-size:16px; line-height:1.6;
+  -webkit-font-smoothing:antialiased; overflow-x:hidden;
 }
-h1,h2,h3{margin:0; font-weight:500; text-wrap:balance}
-p{margin:0}
-:focus-visible{outline:2px solid var(--ink); outline-offset:3px; border-radius:2px}
-
-/* La firma tipografica de la referencia: el tracking se cierra segun crece el
-   cuerpo. A 42 px usan -1,13 px, que son unos -0,027 em. */
-h1{font-size:clamp(30px,5.4vw,54px); line-height:1.06; letter-spacing:-.03em}
-h2{font-size:clamp(23px,2.6vw,28px); line-height:1.24; letter-spacing:-.014em}
-h3{font-size:16px; line-height:1.35; letter-spacing:-.008em}
-
-.rotulo{
-  font-size:11px; font-weight:500; letter-spacing:.085em;
-  text-transform:uppercase; color:var(--muted);
-}
-.num{font-variant-numeric:tabular-nums}
-
-/* ---------------------------------------------------------------- shell -- */
-.cabecera{
-  position:sticky; top:env(safe-area-inset-top,0px); z-index:30;
-  background:rgba(0,0,0,.72); backdrop-filter:blur(14px) saturate(1.2);
-  border-bottom:1px solid var(--linea);
-}
-.cabecera-int{
-  max-width:1420px; margin:0 auto; padding:13px 24px;
-  display:flex; align-items:center; gap:14px 18px; flex-wrap:wrap;
-}
-.marca{display:flex; align-items:baseline; gap:11px; margin-right:auto; min-width:0}
-.marca .nombre{font-size:15px; font-weight:500; letter-spacing:-.012em; white-space:nowrap}
-.marca .sub{font-size:12.5px; color:var(--muted); letter-spacing:-.004em}
-@media (max-width:620px){ .marca .sub{display:none} }
-
-.presets{display:flex; gap:7px; flex-wrap:wrap}
-/* El boton de pildora de la referencia: contorno tenue, y relleno blanco con
-   texto negro cuando esta activo. */
-.chip{
-  font:500 13px/1 var(--sans); letter-spacing:-.008em; color:var(--ink);
-  background:transparent; border:1px solid var(--linea-fuerte); border-radius:100px;
-  padding:8px 15px; cursor:pointer;
-  transition:background-color .15s, color .15s, border-color .15s;
-}
-.chip:hover{border-color:rgba(255,255,255,.55); background:rgba(255,255,255,.06)}
-.chip[aria-pressed="true"]{background:var(--ink); color:#000; border-color:var(--ink)}
-/* Enlace a la otra pagina, con aspecto de pildora pero sin relleno activo */
-a.chip{text-decoration:none; display:inline-flex; align-items:center; color:var(--ink-2)}
-.separador{width:1px; height:22px; background:var(--linea-fuerte)}
-@media (max-width:620px){ .separador{display:none} }
-
-.envoltorio{max-width:1420px; margin:0 auto; padding:0 24px; padding-block:0 64px;
-            position:relative; z-index:1}
-
-/* ----------------------------------------------------------------- hero -- */
-/* Banda de apertura contenida, no a pantalla completa: esto es un instrumento
-   y lo que importa tiene que verse sin desplazarse. */
-.portada{
-  position:relative; padding:40px 0 34px; margin-bottom:30px;
-  border-bottom:1px solid var(--linea); overflow:hidden;
-}
-.portada::before{
-  content:""; position:absolute; inset:-60% 20% auto 20%; height:420px;
-  background:radial-gradient(ellipse at center,
-    rgba(255,158,107,.16) 0%, rgba(127,180,255,.07) 38%, transparent 68%);
-  pointer-events:none; z-index:0;
-}
-.portada > *{position:relative; z-index:1}
-.portada h1{max-width:19ch}
-.portada .entradilla{
-  margin-top:16px; max-width:62ch; font-size:16.5px; line-height:1.6;
-  color:var(--ink-2); letter-spacing:-.006em;
-}
-.portada .meta{
-  margin-top:20px; display:flex; gap:8px 26px; flex-wrap:wrap;
-  font-size:12.5px; color:var(--muted);
-}
-.portada .meta b{color:var(--ink-2); font-weight:500}
-
-.disposicion{display:grid; grid-template-columns:320px minmax(0,1fr); gap:28px; align-items:start}
-@media (max-width:1020px){ .disposicion{grid-template-columns:minmax(0,1fr)} }
-
-/* -------------------------------------------------------------- mandos --- */
-.mandos{
-  background:var(--surface); border:1px solid var(--linea); border-radius:var(--r);
-  position:sticky; top:calc(env(safe-area-inset-top,0px) + 70px);
-  max-height:calc(100vh - 100px); overflow:auto;
-}
-.grupo{border-bottom:1px solid var(--linea); padding:17px 18px 19px}
-.grupo:last-child{border-bottom:0}
-.grupo > .rotulo{display:block; margin-bottom:15px}
-.mando{display:block; margin-bottom:15px}
-.mando:last-child{margin-bottom:0}
-.mando-cab{display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:7px}
-.mando-nom{font-size:13px; color:var(--ink-2); letter-spacing:-.006em}
-.mando-nom i{font-style:italic}
-.mando-val{font-size:13px; color:var(--ink); font-weight:500; letter-spacing:-.01em}
-.mando-val .u{color:var(--muted); font-weight:400}
-
-@media (max-width:1020px){
-  .mandos{position:static; max-height:none}
-  .grupo{display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:0 24px; align-items:start}
-  .grupo > .rotulo{grid-column:1/-1}
-}
-
-input[type=range]{
-  -webkit-appearance:none; appearance:none; width:100%; height:18px;
-  background:transparent; cursor:pointer; margin:0; display:block;
-}
-input[type=range]::-webkit-slider-runnable-track{height:2px; background:rgba(255,255,255,.18); border-radius:2px}
-input[type=range]::-moz-range-track{height:2px; background:rgba(255,255,255,.18); border-radius:2px}
-input[type=range]::-webkit-slider-thumb{
-  -webkit-appearance:none; width:13px; height:13px; border-radius:50%;
-  background:var(--ink); border:0; margin-top:-5.5px; transition:transform .12s;
-}
-input[type=range]::-moz-range-thumb{
-  width:13px; height:13px; border-radius:50%; box-sizing:border-box;
-  background:var(--ink); border:0;
-}
-input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.18)}
-input[type=range]:active::-webkit-slider-thumb{transform:scale(1.25)}
-
-.segmentado{display:flex; background:var(--hueco); border-radius:8px; padding:3px; gap:3px}
-.segmentado button{
-  flex:1; font:500 12.5px/1 var(--sans); letter-spacing:-.006em; color:var(--muted);
-  background:transparent; border:0; border-radius:6px; padding:8px 4px; cursor:pointer;
-  transition:background-color .15s, color .15s;
-}
-.segmentado button:hover{color:var(--ink-2)}
-.segmentado button[aria-pressed="true"]{background:rgba(255,255,255,.16); color:var(--ink)}
-
-select{
-  width:100%; font:400 13px/1.2 var(--sans); color:var(--ink);
-  background:var(--surface-2); border:1px solid var(--linea);
-  border-radius:8px; padding:9px 10px;
-}
-.nota-panel{display:block; margin-top:8px; font-size:11.5px; color:var(--muted)}
-
-/* --------------------------------------------------------------- avisos -- */
-.aviso{
-  display:none; gap:12px; align-items:flex-start;
-  background:var(--crit-tinte); border:1px solid rgba(255,107,90,.45);
-  border-radius:var(--r); padding:14px 16px; margin-bottom:22px;
-}
-.aviso[data-visible="1"]{display:flex}
-.aviso .rotulo{color:var(--crit)}
-.aviso p{font-size:13.5px; color:var(--ink-2)}
-.aviso strong{color:var(--ink); font-weight:500}
-
-/* ----------------------------------------------------------------- kpis -- */
-.kpis{display:grid; grid-template-columns:repeat(5,1fr); gap:1px; margin-bottom:1px;
-      background:var(--linea); border:1px solid var(--linea); border-radius:var(--r);
-      overflow:hidden}
-@media (max-width:760px){ .kpis{grid-template-columns:repeat(2,1fr)} .kpis .kpi:last-child{grid-column:span 2} }
-/* Sin tarjetas sueltas: una rejilla continua separada por filetes de un pixel,
-   que es como la referencia estructura sin dibujar cajas. */
-.kpi{background:var(--ground); padding:18px 18px 17px}
-.kpi .rotulo{display:block; margin-bottom:11px}
-.kpi .cifra{
-  font-size:clamp(28px,3.2vw,38px); font-weight:500; line-height:1;
-  letter-spacing:-.034em; font-variant-numeric:tabular-nums;
-}
-.kpi .cifra .u{font-size:14px; font-weight:400; color:var(--muted); margin-left:5px; letter-spacing:-.01em}
-.kpi .pie{margin-top:9px; font-size:12.5px; color:var(--muted); letter-spacing:-.004em}
-.kpi.alarma{background:var(--crit-tinte)}
-.kpi.alarma .cifra{color:var(--crit)}
-.pastilla{
-  display:inline-flex; align-items:center; gap:6px; margin-top:10px;
-  font:500 11px/1 var(--sans); letter-spacing:.05em; text-transform:uppercase;
-  border-radius:100px; padding:5px 10px;
-}
-.pastilla.si{background:var(--ok-tinte); color:var(--ok)}
-.pastilla.no{background:var(--crit); color:#000}
-.pastilla .punto{width:5px; height:5px; border-radius:50%; background:currentColor}
-
-.tira{
-  display:flex; flex-wrap:wrap; gap:2px 30px;
-  background:var(--ground); border:1px solid var(--linea); border-top:0;
-  border-radius:0 0 var(--r) var(--r); padding:14px 18px; margin:-1px 0 40px;
-}
-.dato{display:flex; align-items:baseline; gap:8px; padding:3px 0}
-.dato .k{font-size:11px; font-weight:500; letter-spacing:.075em; text-transform:uppercase; color:var(--muted)}
-.dato .v{font-size:13.5px; color:var(--ink); letter-spacing:-.008em; font-variant-numeric:tabular-nums}
-.dato .v .u{color:var(--muted)}
-
-/* ---------------------------------------------------------------- mapas -- */
-.seccion-cab{display:flex; align-items:baseline; gap:14px; margin:0 0 20px; flex-wrap:wrap}
-.seccion-cab .pista{font-size:13.5px; color:var(--muted); letter-spacing:-.004em}
-.mapas{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; margin-bottom:44px}
-@media (max-width:900px){ .mapas{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))} }
-.mapa{
-  margin:0; display:flex; flex-direction:column; gap:11px;
-  background:var(--surface); border:1px solid var(--linea);
-  border-radius:var(--r); padding:16px;
-}
-.mapa .sub{font-size:12.5px; color:var(--muted); margin-top:3px; letter-spacing:-.004em}
-.lienzo{position:relative; width:100%; background:#000; border:1px solid var(--linea); border-radius:4px; overflow:hidden}
-.lienzo canvas{display:block; width:100%; height:100%; position:absolute; inset:0}
-.lienzo canvas.campo{image-rendering:pixelated}
-.lienzo:hover{cursor:crosshair}
-.ejes{display:flex; justify-content:space-between; font-size:11px; color:var(--muted)}
-.cbar{height:8px; border-radius:2px}
-.cbar-pies{display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-top:-4px}
-
-.globo{
-  position:absolute; pointer-events:none; z-index:5; opacity:0; transition:opacity .1s;
-  background:rgba(20,20,20,.97); border:1px solid var(--linea-fuerte); border-radius:7px;
-  padding:8px 10px; white-space:nowrap;
-  font-size:12px; line-height:1.5; color:var(--ink); letter-spacing:-.004em;
-  transform:translate(-50%,-100%);
-}
-.globo b{font-weight:500}
-
-/* ------------------------------------------------------------- graficas -- */
-.graficas{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin-bottom:44px}
-@media (max-width:860px){ .graficas{grid-template-columns:minmax(0,1fr)} }
-.tarjeta{
-  background:var(--surface); border:1px solid var(--linea);
-  border-radius:var(--r); padding:20px;
-}
-.tarjeta-cab{display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:6px; flex-wrap:wrap}
-.tarjeta .sub{font-size:12.5px; color:var(--muted); letter-spacing:-.004em}
-.leyenda{display:flex; gap:16px; margin:12px 0 4px; flex-wrap:wrap}
-/* Botón de descarga de cada figura: discreto, a la derecha de su título */
-.mapa figcaption{display:flex; justify-content:space-between; align-items:flex-start; gap:10px}
-.descargar{
-  flex:none; font:500 11.5px/1 var(--sans); letter-spacing:-.004em; color:var(--ink-2);
-  background:transparent; border:1px solid var(--linea-fuerte); border-radius:100px;
-  padding:6px 11px; cursor:pointer; transition:background-color .15s, color .15s, border-color .15s;
-}
-.descargar:hover{color:var(--ink); border-color:rgba(255,255,255,.55); background:rgba(255,255,255,.06)}
-.leyenda span{display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink-2)}
-.leyenda i{width:15px; height:2px; border-radius:1px; display:inline-block}
-.grafica{position:relative}
-.grafica svg{display:block; width:100%; height:auto; overflow:visible}
-
-/* ----------------------------------------------------------------- pie --- */
-.abajo{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); gap:18px}
-@media (max-width:860px){ .abajo{grid-template-columns:minmax(0,1fr)} }
-.nodo-tabla{width:100%; border-collapse:collapse; margin-top:12px}
-.nodo-tabla th, .nodo-tabla td{text-align:left; padding:9px 0; border-bottom:1px solid var(--linea); font-size:13.5px}
-.nodo-tabla th{font-size:11px; font-weight:500; letter-spacing:.075em; text-transform:uppercase; color:var(--muted)}
-.nodo-tabla td{text-align:right; color:var(--ink); font-variant-numeric:tabular-nums; letter-spacing:-.008em}
-.nodo-tabla td .u{color:var(--muted)}
-.nodo-tabla tr:last-child th, .nodo-tabla tr:last-child td{border-bottom:0}
-.hip{margin-top:12px; font-size:13.5px; color:var(--ink-2); letter-spacing:-.004em}
-.hip li{margin-bottom:9px}
-.hip li:last-child{margin-bottom:0}
-.hip ul{margin:0; padding-left:19px}
-.hip strong{color:var(--ink); font-weight:500}
-.hip code{font-family:ui-monospace,"SFMono-Regular",Consolas,monospace; font-size:12.5px; color:var(--pared)}
-.pie-fuente{
-  margin-top:44px; padding-top:22px; border-top:1px solid var(--linea);
-  font-size:12.5px; color:var(--muted); max-width:90ch; letter-spacing:-.004em;
-}
-.pie-fuente a{color:var(--ink-2)}
-
-@media (prefers-reduced-motion:reduce){ *{transition:none!important} }
-
-/* --------------------------------------------------------------- reset --- */
-/* Lo que ponia la plataforma de artefactos y aqui hay que poner a mano. */
-img{max-width:100%}
-/* Imprescindible: los deslizadores de pico y potencia se ocultan con la
-   propiedad .hidden, y .mando lleva display:block, que gana al display:none
-   por defecto del navegador si no se fuerza aqui. */
+h1,h2,h3,p{margin:0}
+h1,h2,h3{font-weight:600; text-wrap:balance}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--ink); outline-offset:3px; border-radius:4px}
 [hidden]{display:none!important}
+img,svg,canvas{max-width:100%}
+
+.grad{
+  background:linear-gradient(100deg,var(--fluido) 0%,var(--sol) 45%,var(--pared) 70%,var(--crit) 100%);
+  background-size:220% 100%;
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  animation:deriva 7s ease-in-out infinite alternate;
+}
+@keyframes deriva{to{background-position:100% 0}}
+
+/* Fondo: brasas que suben. Fijo al viewport para gastar memoria constante. */
+#brasas{position:fixed; inset:0; width:100%; height:100%; z-index:0; pointer-events:none}
+main,header,footer{position:relative; z-index:1}
+
+/* Barra de progreso de lectura */
+#progreso{
+  position:fixed; top:0; left:0; height:3px; width:100%; z-index:50;
+  transform-origin:0 50%; transform:scaleX(0);
+  background:linear-gradient(90deg,var(--fluido),var(--sol),var(--pared),var(--crit));
+}
+
+/* ------------------------------------------------------------ cabecera -- */
+.cab{
+  position:fixed; top:0; left:0; right:0; z-index:40;
+  display:flex; align-items:center; gap:18px; padding:14px max(20px,4vw);
+  background:linear-gradient(#000c,#0000); backdrop-filter:blur(6px);
+}
+.marca{display:flex; align-items:center; gap:10px; text-decoration:none; font-weight:600; letter-spacing:-.01em}
+.marca svg{width:26px; height:26px}
+.cab nav{margin-left:auto; display:flex; gap:6px; flex-wrap:wrap}
+.chip{
+  display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:99px;
+  border:1px solid var(--linea); background:#0008; color:var(--ink-2);
+  font-size:13px; text-decoration:none; transition:.25s;
+}
+.chip:hover{border-color:var(--linea-fuerte); color:var(--ink); background:#fff1}
+@media (max-width:640px){ .cab nav a:not(.chip-fuerte){display:none} }
+
+/* --------------------------------------------------------------- portada -- */
+.portada{
+  min-height:100svh; padding:110px max(20px,4vw) 60px;
+  display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr); gap:clamp(20px,4vw,64px);
+  align-items:center; max-width:1320px; margin:0 auto;
+}
+.etiqueta{
+  display:inline-flex; align-items:center; gap:8px; font-size:12px; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--muted); margin-bottom:22px;
+}
+.etiqueta i{width:8px; height:8px; border-radius:50%; background:var(--pared); box-shadow:0 0 0 0 #ff9e6b99; animation:latido 2s infinite}
+@keyframes latido{70%{box-shadow:0 0 0 12px #ff9e6b00} 100%{box-shadow:0 0 0 0 #ff9e6b00}}
+h1{font-size:clamp(38px,6.2vw,84px); line-height:1.02; letter-spacing:-.035em}
+.entradilla{margin-top:26px; max-width:52ch; font-size:clamp(16px,1.5vw,19px); color:var(--ink-2)}
+.acciones{display:flex; flex-wrap:wrap; gap:12px; margin-top:34px}
+.boton{
+  position:relative; display:inline-flex; align-items:center; gap:10px; padding:14px 24px;
+  border-radius:99px; font-weight:600; font-size:15px; text-decoration:none; overflow:hidden;
+  transition:transform .25s, box-shadow .25s;
+}
+.boton.pri{background:#fff; color:#000}
+.boton.pri::after{ /* destello que barre el boton */
+  content:""; position:absolute; inset:0; transform:translateX(-120%);
+  background:linear-gradient(100deg,#0000,#ff9e6b88,#0000); animation:barrido 3.4s infinite;
+}
+@keyframes barrido{40%,100%{transform:translateX(120%)}}
+.boton.sec{border:1px solid var(--linea-fuerte); color:var(--ink)}
+.boton:hover{transform:translateY(-2px); box-shadow:0 10px 30px #ff9e6b33}
+.boton .fl{transition:transform .25s} .boton:hover .fl{transform:translateX(4px)}
+
+/* Escenario de la placa */
+.escenario{position:relative; perspective:1200px; touch-action:pan-y; display:flex; justify-content:center}
+.inclina{width:100%; max-width:min(520px,calc((100svh - 170px)*.74)); transform-style:preserve-3d; will-change:transform}
+#placa{display:block; width:100%; aspect-ratio:.74; border-radius:18px; cursor:crosshair}
+.hud{
+  position:absolute; left:50%; bottom:-6px; transform:translateX(-50%); display:flex; gap:8px; z-index:2;
+  white-space:nowrap;
+}
+.hud span{
+  padding:6px 12px; border-radius:99px; background:#000c; border:1px solid var(--linea);
+  font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums; backdrop-filter:blur(6px);
+}
+.hud b{color:var(--ink); font-weight:600}
+.pista{
+  position:absolute; top:-2px; right:6px; font-size:11.5px; color:var(--muted); z-index:2;
+  display:flex; align-items:center; gap:6px; transition:opacity .6s;
+}
+.pista svg{width:16px; height:16px; animation:senala 2.2s ease-in-out infinite}
+@keyframes senala{50%{transform:translate(4px,4px)}}
+.bajar{
+  position:absolute; left:50%; bottom:18px; width:26px; height:42px; border:1.5px solid var(--linea-fuerte);
+  border-radius:14px; transform:translateX(-50%); opacity:.8;
+}
+.bajar::after{content:""; position:absolute; left:50%; top:8px; width:3px; height:8px; margin-left:-1.5px; border-radius:2px; background:#fff; animation:rueda 1.8s infinite}
+@keyframes rueda{0%{opacity:0; transform:translateY(0)} 30%{opacity:1} 100%{opacity:0; transform:translateY(14px)}}
+@media (max-width:900px){
+  .portada{grid-template-columns:1fr; padding-top:96px}
+  .escenario{margin-top:10px; padding-bottom:26px}
+  .bajar{display:none}
+}
+
+/* ---------------------------------------------------------------- bloques -- */
+.bloque{max-width:1180px; margin:0 auto; padding:clamp(70px,11vw,140px) max(20px,4vw) 0}
+.bloque > .cab-sec{max-width:760px; margin-bottom:44px}
+.sobre{font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--pared); margin-bottom:14px; display:block}
+h2{font-size:clamp(30px,4.4vw,56px); line-height:1.05; letter-spacing:-.03em}
+.cab-sec p{margin-top:18px; color:var(--ink-2); font-size:clamp(15px,1.3vw,17.5px)}
+
+.panel{
+  position:relative; border:1px solid var(--linea); border-radius:22px; background:var(--surface);
+  padding:clamp(14px,2.5vw,28px); overflow:hidden;
+}
+.panel::before{ /* resplandor suave en la esquina */
+  content:""; position:absolute; width:420px; height:420px; right:-140px; top:-200px;
+  background:radial-gradient(circle,#ff9e6b22,#0000 65%); pointer-events:none;
+}
+.panel svg{display:block; width:100%; height:auto}
+.mando{display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-top:14px; font-size:13.5px; color:var(--ink-2)}
+.mando input[type=range]{flex:1 1 220px; max-width:420px; accent-color:var(--pared)}
+.mando output{min-width:3.5ch; color:var(--ink); font-variant-numeric:tabular-nums}
+.btn-min{
+  border:1px solid var(--linea-fuerte); background:#0000; color:var(--ink); border-radius:99px;
+  padding:7px 16px; font:inherit; font-size:13px; cursor:pointer; transition:.2s;
+}
+.btn-min:hover{background:#fff2}
+
+.pasos{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:22px}
+.paso{border:1px solid var(--linea); border-radius:var(--r); padding:20px; background:var(--surface); transition:.3s}
+.paso:hover{border-color:var(--linea-fuerte); transform:translateY(-3px)}
+.paso .n{font-size:13px; color:var(--pared); font-weight:600}
+.paso h3{font-size:18px; margin:6px 0 6px; letter-spacing:-.01em}
+.paso p{font-size:14.5px; color:var(--ink-2)}
+@media (max-width:760px){.pasos{grid-template-columns:1fr}}
+
+/* Octogono */
+.dos{display:grid; grid-template-columns:1.25fr .75fr; gap:22px; align-items:center}
+@media (max-width:900px){.dos{grid-template-columns:1fr}}
+.lista{list-style:none; padding:0; margin:0; display:grid; gap:12px}
+.lista li{
+  display:flex; gap:12px; padding:14px 16px; border:1px solid var(--linea); border-radius:12px;
+  background:var(--surface); font-size:14.5px; color:var(--ink-2); transition:.3s;
+}
+.lista li b{color:var(--ink); font-weight:600; display:block}
+.lista li.on{border-color:var(--pared); background:#ff9e6b14}
+.lista .pt{flex:none; width:10px; height:10px; border-radius:50%; margin-top:7px; background:var(--c,#fff)}
+#info-placa{min-height:3.2em; margin-top:12px; font-size:14px; color:var(--ink-2)}
+
+/* Cifras */
+.cifras{display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--linea); border:1px solid var(--linea); border-radius:22px; overflow:hidden}
+.cifra{background:var(--surface); padding:clamp(20px,3vw,38px) 20px; text-align:center}
+.cifra .num{font-size:clamp(34px,5vw,64px); font-weight:600; letter-spacing:-.04em; line-height:1; font-variant-numeric:tabular-nums}
+.cifra .u{font-size:.4em; color:var(--muted); font-weight:500; letter-spacing:0; margin-left:4px}
+.cifra p{margin-top:12px; font-size:13.5px; color:var(--muted)}
+@media (max-width:760px){.cifras{grid-template-columns:repeat(2,1fr)}}
+
+/* Tarjetas de modelos */
+.modelos{display:grid; grid-template-columns:repeat(2,1fr); gap:18px}
+@media (max-width:820px){.modelos{grid-template-columns:1fr}}
+.modelo{
+  --rx:0deg; --ry:0deg; position:relative; display:flex; flex-direction:column; text-decoration:none;
+  border:1px solid var(--linea); border-radius:22px; background:var(--surface); overflow:hidden;
+  transform:perspective(900px) rotateX(var(--rx)) rotateY(var(--ry)); transition:transform .15s, border-color .3s;
+}
+.modelo:hover{border-color:var(--linea-fuerte)}
+.modelo .vista{height:190px; position:relative; overflow:hidden; border-bottom:1px solid var(--linea)}
+.modelo .cuerpo{padding:24px 26px 28px}
+.modelo h3{font-size:24px; letter-spacing:-.02em}
+.modelo p{margin-top:10px; font-size:14.5px; color:var(--ink-2)}
+.modelo .ir{margin-top:18px; display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px}
+.modelo:hover .ir .fl{transform:translateX(5px)}
+.modelo .ir .fl{transition:transform .25s}
+.modelo .marca-tag{
+  position:absolute; top:14px; left:14px; z-index:2; padding:4px 11px; border-radius:99px;
+  background:#000b; border:1px solid var(--linea); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-2);
+}
+.modelo::after{ /* brillo que sigue al raton */
+  content:""; position:absolute; inset:0; pointer-events:none; opacity:0; transition:opacity .3s;
+  background:radial-gradient(360px circle at var(--mx,50%) var(--my,50%),#ff9e6b1f,#0000 60%);
+}
+.modelo:hover::after{opacity:1}
+
+footer{max-width:1180px; margin:0 auto; padding:110px max(20px,4vw) 50px; color:var(--muted); font-size:13.5px}
+footer .linea{border-top:1px solid var(--linea); padding-top:24px; display:flex; flex-wrap:wrap; gap:10px 28px; justify-content:space-between}
+
+/* Aparicion al hacer scroll */
+.rv{opacity:0; transform:translateY(28px); transition:opacity .9s cubic-bezier(.2,.7,.2,1), transform .9s cubic-bezier(.2,.7,.2,1); transition-delay:var(--d,0s)}
+.rv.in{opacity:1; transform:none}
+
+/* Animaciones CSS de los SVG */
+.flujo-solar{animation:cae 2.4s ease-in-out infinite}
+@keyframes cae{0%{transform:translateY(-10px); opacity:0} 40%{opacity:1} 100%{transform:translateY(8px); opacity:0}}
+.haz{stroke-dasharray:6 10; animation:haz 1.2s linear infinite}
+@keyframes haz{to{stroke-dashoffset:-16}}
+.corre{stroke-dasharray:2 16; stroke-linecap:round; animation:corre 1.6s linear infinite}
+@keyframes corre{to{stroke-dashoffset:-18}}
+.pulso{animation:pulsa 2.6s ease-in-out infinite}
+@keyframes pulsa{50%{opacity:.35}}
+.giro{transform-origin:450px 250px; animation:girar 60s linear infinite}
+@keyframes girar{to{transform:rotate(360deg)}}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important; transition:none!important}
+  .rv{opacity:1; transform:none}
+  html{scroll-behavior:auto}
+}
 </style>
 </head>
 <body>
 
 <canvas id="brasas" aria-hidden="true"></canvas>
+<div id="progreso" aria-hidden="true"></div>
 
-<header class="cabecera">
-  <div class="cabecera-int">
-    <div class="marca">
-      <span class="nombre">Receptor solar PPHE</span>
-      <span class="sub">modelo nodal</span>
-    </div>
-    <a class="chip" href="octogonal/" title="Caso de estudio final: receptor octogonal de sal solar">Receptor octogonal →</a>
-    <span class="separador" aria-hidden="true"></span>
-    <div class="presets" id="presets" role="group" aria-label="Casos precargados">
-      <button class="chip" data-preset="referencia" aria-pressed="true">Referencia</button>
-      <button class="chip" data-preset="pico">Pico alto</button>
-      <button class="chip" data-preset="ancha">Campana ancha</button>
-    </div>
-  </div>
+<header class="cab">
+  <a class="marca" href="#inicio" aria-label="Receptor solar PPHE, inicio">
+    <svg viewBox="0 0 32 32" aria-hidden="true">
+      <rect x="4" y="3" width="24" height="26" rx="5" fill="none" stroke="#fff" stroke-width="1.6"/>
+      <g fill="#FF9E6B"><circle cx="11" cy="11" r="2.2"/><circle cx="21" cy="11" r="2.2"/><circle cx="11" cy="21" r="2.2"/><circle cx="21" cy="21" r="2.2"/></g>
+    </svg>
+    Receptor solar PPHE
+  </a>
+  <nav aria-label="Secciones">
+    <a class="chip" href="#pillow">Pillow plate</a>
+    <a class="chip" href="#octogono">Octógono</a>
+    <a class="chip" href="#cifras">Cifras</a>
+    <a class="chip chip-fuerte" href="#modelos">Modelos →</a>
+  </nav>
 </header>
 
-<div class="envoltorio">
+<main id="inicio">
 
+<!-- ================================================================ portada -->
 <section class="portada">
-  <h1>La distribución de calor de un receptor solar</h1>
-  <p class="entradilla">
-    Una placa de acero recibe la mancha de un campo de helióstatos y la atraviesa
-    aire a presión. Mueve el flujo de pico, la campana, el gasto o la geometría del
-    panel y mira cómo se reparte el calor: qué llega, qué se pierde al cielo y qué
-    acaba en el fluido, porción a porción.
-  </p>
-  <div class="meta">
-    <span><b>Modelo nodal</b> · balance por porción con bisección anidada</span>
-    <span><b>Sin servidor</b> · el cálculo corre en el navegador</span>
-    <span><b>Validado</b> · nodo a nodo contra el modelo en Python</span>
+  <div>
+    <span class="etiqueta rv"><i></i>Trabajo de fin de grado · Ingeniería Mecánica</span>
+    <h1 class="rv" style="--d:.08s">Un receptor solar hecho de <span class="grad">pillow plates</span></h1>
+    <p class="entradilla rv" style="--d:.18s">
+      Dos chapas de acero soldadas por puntos e infladas como cojines. Por dentro
+      corre sal fundida; por fuera, la mancha de un campo de helióstatos. Juega con
+      la placa: mueve el sol y mira cómo el calor viaja con el fluido.
+    </p>
+    <div class="acciones rv" style="--d:.28s">
+      <a class="boton pri" href="octogonal/">Receptor octogonal <span class="fl">→</span></a>
+      <a class="boton sec" href="aire/">Placa con aire <span class="fl">→</span></a>
+    </div>
+  </div>
+
+  <div class="escenario rv" style="--d:.2s">
+    <span class="pista" id="pista">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3l14 7-6 2-2 6z"/></svg>
+      mueve el sol sobre la placa
+    </span>
+    <div class="inclina" id="inclina">
+      <canvas id="placa" role="img" aria-label="Placa pillow plate que se calienta bajo una mancha solar que sigue al puntero"></canvas>
+    </div>
+    <div class="hud" aria-hidden="true">
+      <span>Entrada <b>290 °C</b></span>
+      <span>Salida <b id="hud-sal">–</b></span>
+    </div>
+  </div>
+
+  <div class="bajar" aria-hidden="true"></div>
+</section>
+
+<!-- ============================================================ pillow plate -->
+<section class="bloque" id="pillow">
+  <div class="cab-sec rv">
+    <span class="sobre">Anatomía</span>
+    <h2>Dos chapas planas, un canal inflado</h2>
+    <p>
+      Un pillow plate se fabrica soldando por puntos dos chapas y presurizando el
+      hueco entre ellas: el metal cede y se hincha en cojines. Las soldaduras dejan
+      una red de canales por la que el fluido serpentea, y el relieve provoca la
+      turbulencia que mejora la transferencia de calor.
+    </p>
+  </div>
+
+  <div class="panel rv">
+    <svg id="svg-corte" viewBox="0 0 900 360" role="img" aria-label="Corte de un pillow plate inflándose">
+      <defs>
+        <linearGradient id="g-sal" x1="0" x2="1">
+          <stop offset="0" stop-color="#7FB4FF"/><stop offset=".55" stop-color="#FFD9A0"/><stop offset="1" stop-color="#FF7A55"/>
+        </linearGradient>
+        <clipPath id="c-sal"><path id="cp-sal" d=""/></clipPath>
+        <marker id="pta" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#FF9E6B"/></marker>
+      </defs>
+
+      <!-- flujo solar sobre la cara expuesta -->
+      <g id="rayos-corte"></g>
+
+      <path id="fl-sal" d="" fill="url(#g-sal)" opacity="0"/>
+      <g id="pts-sal" clip-path="url(#c-sal)"></g>
+      <path id="ch-sup" d="" fill="none" stroke="#e9eef7" stroke-width="5" stroke-linecap="round"/>
+      <path id="ch-inf" d="" fill="none" stroke="#9aa6b8" stroke-width="5" stroke-linecap="round"/>
+      <g id="soldaduras"></g>
+      <g id="rotulos" font-size="13" fill="#ffffffb8"></g>
+    </svg>
+    <div class="mando">
+      <label for="presion">Presión de inflado</label>
+      <input type="range" id="presion" min="0" max="100" value="0">
+      <output id="presion-v">0 %</output>
+      <button class="btn-min" id="reinflar" type="button">↻ Volver a inflar</button>
+    </div>
+  </div>
+
+  <div class="pasos">
+    <div class="paso rv"><span class="n">01</span><h3>Dos chapas</h3><p>Dos láminas de acero planas se apilan, sin nada entre ellas.</p></div>
+    <div class="paso rv" style="--d:.1s"><span class="n">02</span><h3>Soldadura por puntos</h3><p>Una malla de puntos une las chapas. Fija el dibujo de los canales y aguanta la presión.</p></div>
+    <div class="paso rv" style="--d:.2s"><span class="n">03</span><h3>Inflado hidráulico</h3><p>Se inyecta líquido a presión entre las chapas: entre soldadura y soldadura, el metal se hincha.</p></div>
   </div>
 </section>
 
-<div class="disposicion">
-
-  <!-- ================================================================ -->
-  <aside class="mandos" aria-label="Parámetros del modelo">
-
-    <div class="grupo">
-      <span class="rotulo">Mancha solar</span>
-      <div class="mando">
-        <div class="mando-cab"><span class="mando-nom">Dato que se impone</span></div>
-        <div class="segmentado" id="modo" role="group" aria-label="Forma de fijar la campana">
-          <button data-modo="pico" aria-pressed="true">Flujo de pico</button>
-          <button data-modo="potencia" aria-pressed="false">Potencia total</button>
-        </div>
-      </div>
-      <label class="mando" id="m-qpico">
-        <span class="mando-cab"><span class="mando-nom"><i>q</i>&Prime; de pico</span>
-          <output class="mando-val" for="q_pico"></output></span>
-        <input type="range" id="q_pico" min="25" max="700" step="5" value="200">
-      </label>
-      <label class="mando" id="m-Q" hidden>
-        <span class="mando-cab"><span class="mando-nom"><i>Q</i> sobre la placa</span>
-          <output class="mando-val" for="Q"></output></span>
-        <input type="range" id="Q" min="20" max="900" step="5" value="236">
-      </label>
-      <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>&sigma;</i><sub>x</sub>, anchura de campana</span>
-          <output class="mando-val" for="sigma_x"></output></span>
-        <input type="range" id="sigma_x" min="0.08" max="1.5" step="0.01" value="0.5">
-      </label>
-      <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>&sigma;</i><sub>y</sub>, altura de campana</span>
-          <output class="mando-val" for="sigma_y"></output></span>
-        <input type="range" id="sigma_y" min="0.08" max="2" step="0.01" value="0.5">
-      </label>
-    </div>
-
-    <div class="grupo">
-      <span class="rotulo">Placa y mezcla</span>
-      <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>L</i>, altura</span>
-          <output class="mando-val" for="L"></output></span>
-        <input type="range" id="L" min="0.5" max="4" step="0.05" value="1.5">
-      </label>
-      <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>W</i>, anchura</span>
-          <output class="mando-val" for="W"></output></span>
-        <input type="range" id="W" min="0.3" max="4" step="0.05" value="1.5">
-      </label>
-      <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>&lambda;</i>, mezcla entre columnas</span>
-          <output class="mando-val" for="lam"></output></span>
-        <input type="range" id="lam" min="0" max="1" step="0.01" value="0.7">
-        <span class="nota-panel">1 columnas adiabáticas · 0 mezcla completa en cada fila</span>
-      </label>
-    </div>
-
-    <div class="grupo">
-      <span class="rotulo">Aire a presión</span>
-      <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>G</i>, gasto másico total</span>
-          <output class="mando-val" for="G"></output></span>
-        <input type="range" id="G" min="0.05" max="3" step="0.01" value="0.9">
-      </label>
-      <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>T</i><sub>ent</sub>, entrada uniforme</span>
-          <output class="mando-val" for="T_ent"></output></span>
-        <input type="range" id="T_ent" min="-20" max="900" step="5" value="300">
-      </label>
-      <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>p</i>, presión de entrada</span>
-          <output class="mando-val" for="p"></output></span>
-        <input type="range" id="p" min="1" max="20" step="0.5" value="10">
-      </label>
-    </div>
-
-    <div class="grupo">
-      <span class="rotulo">Pérdidas y panel</span>
-      <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>h</i><sub>ext</sub>, convección exterior</span>
-          <output class="mando-val" for="h_ext"></output></span>
-        <input type="range" id="h_ext" min="5" max="40" step="1" value="20">
-      </label>
-      <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>&epsilon;</i>, emisividad</span>
-          <output class="mando-val" for="eps"></output></span>
-        <input type="range" id="eps" min="0.1" max="1" step="0.01" value="0.85">
-      </label>
-      <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>&alpha;</i>, absortividad</span>
-          <output class="mando-val" for="alfa"></output></span>
-        <input type="range" id="alfa" min="0.5" max="1" step="0.01" value="1">
-      </label>
-      <div class="mando">
-        <div class="mando-cab"><span class="mando-nom">Celda de soldaduras</span></div>
-        <div class="segmentado" id="familia" role="group" aria-label="Familia de celda de M. Piper">
-          <button data-familia="longitudinal" aria-pressed="true">Longitudinal</button>
-          <button data-familia="cuadrada" aria-pressed="false">Cuadrada</button>
-          <button data-familia="transversal" aria-pressed="false">Transversal</button>
-        </div>
-      </div>
-      <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>s</i><sub>T</sub>, paso transversal</span>
-          <output class="mando-val" for="s_t"></output></span>
-        <input type="range" id="s_t" min="51.5" max="72" step="0.1" value="72">
-      </label>
-      <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>s</i><sub>L</sub>, paso longitudinal</span>
-          <output class="mando-val" for="s_l"></output></span>
-        <input type="range" id="s_l" min="20.55" max="21.2" step="0.05" value="21">
-      </label>
-      <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>b</i><sub>i</sub>, expansión interna</span>
-          <output class="mando-val" for="b_i"></output></span>
-        <input type="range" id="b_i" min="3" max="6" step="0.05" value="3.4">
-      </label>
-      <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>d</i><sub>sp</sub>, diámetro de soldadura</span>
-          <output class="mando-val" for="d_sp"></output></span>
-        <input type="range" id="d_sp" min="7.2" max="10" step="0.05" value="7.2">
-        <span class="nota-panel" id="nota-celda"></span>
-      </label>
-      <div class="mando">
-        <div class="mando-cab"><span class="mando-nom">Escala de color</span></div>
-        <div class="segmentado" id="cmap" role="group" aria-label="Escala de color de los mapas">
-          <button data-cmap="hot" aria-pressed="true">hot</button>
-          <button data-cmap="inferno" aria-pressed="false">inferno</button>
-        </div>
-      </div>
-    </div>
-  </aside>
-
-  <!-- ================================================================ -->
-  <main>
-    <div class="aviso" id="aviso" role="status">
-      <span class="rotulo" style="padding-top:2px">Sin solución</span>
-      <p><strong id="aviso-msg"></strong> <span id="aviso-consejo"></span></p>
-    </div>
-
-    <div id="resultados">
-      <section class="kpis" aria-label="Balance global">
-        <div class="kpi">
-          <span class="rotulo">Calor al fluido</span>
-          <div class="cifra"><span id="k-qutil">–</span><span class="u">kW</span></div>
-          <div class="pie">de <span id="k-qinc">–</span> kW incidentes</div>
-        </div>
-        <div class="kpi">
-          <span class="rotulo">Rendimiento</span>
-          <div class="cifra"><span id="k-rend">–</span><span class="u">%</span></div>
-          <div class="pie"><span id="k-perd">–</span> kW perdidos</div>
-        </div>
-        <div class="kpi">
-          <span class="rotulo">Salida del aire</span>
-          <div class="cifra"><span id="k-tsal">–</span><span class="u">°C</span></div>
-          <div class="pie">media en <i>y</i> = L · pico <span id="k-tsalmax">–</span> °C</div>
-        </div>
-        <div class="kpi" id="kpi-pared">
-          <span class="rotulo">Pared más caliente</span>
-          <div class="cifra"><span id="k-tw">–</span><span class="u">°C</span></div>
-          <div class="pastilla si" id="k-aisi"><span class="punto"></span><span>AISI 321</span></div>
-        </div>
-        <div class="kpi">
-          <span class="rotulo">Pérdida de carga</span>
-          <div class="cifra"><span id="k-dp">–</span><span class="u">kPa</span></div>
-          <div class="pie"><span id="k-dprel">–</span> % de la presión de entrada</div>
-        </div>
-      </section>
-
-      <div class="tira" aria-label="Punto de trabajo del canal interno">
-        <div class="dato"><span class="k">q″ pico</span><span class="v"><span id="d-qpico">–</span> <span class="u">kW/m²</span></span></div>
-        <div class="dato"><span class="k">q″ medio</span><span class="v"><span id="d-qmedio">–</span> <span class="u">kW/m²</span></span></div>
-        <div class="dato"><span class="k">Interceptación</span><span class="v"><span id="d-interc">–</span> <span class="u">%</span></span></div>
-        <div class="dato"><span class="k">Factor de pico</span><span class="v"><span id="d-fpico">–</span></span></div>
-        <div class="dato"><span class="k">u canal</span><span class="v"><span id="d-u">–</span> <span class="u">m/s</span></span></div>
-        <div class="dato"><span class="k">Re</span><span class="v"><span id="d-re">–</span></span></div>
-        <div class="dato"><span class="k">h interno</span><span class="v"><span id="d-h">–</span> <span class="u">W/m²K</span></span></div>
-        <div class="dato"><span class="k">Malla</span><span class="v"><span id="d-malla">–</span></span></div>
-        <div class="dato"><span class="k">Celda</span><span class="v"><span id="d-celda">–</span></span></div>
-        <div class="dato"><span class="k">Soldaduras</span><span class="v"><span id="d-sold">–</span> <span class="u">% del área</span></span></div>
-        <div class="dato"><span class="k">Δp fricción</span><span class="v"><span id="d-dpf">–</span> <span class="u">kPa</span></span></div>
-        <div class="dato"><span class="k">Δp distribución</span><span class="v"><span id="d-dpd">–</span> <span class="u">kPa</span></span></div>
-        <div class="dato"><span class="k">Δp aceleración</span><span class="v"><span id="d-dpa">–</span> <span class="u">kPa</span></span></div>
-      </div>
-
-      <div class="seccion-cab">
-        <h2>Campos sobre la placa</h2>
-        <span class="pista">Valores medios de cada porción. Pulsa una celda para fijar la columna que se dibuja abajo.</span>
-      </div>
-      <section class="mapas">
-        <figure class="mapa">
-          <figcaption><div><h3>Flujo incidente</h3><p class="sub">q″ [kW/m²]</p></div>
-            <button class="descargar" data-descargar="flujo" title="Descargar el mapa como PNG">PNG ↓</button></figcaption>
-          <div class="lienzo" id="l-flujo">
-            <canvas class="campo" id="c-flujo"></canvas><canvas class="capa" id="o-flujo"></canvas>
-            <div class="globo" id="g-flujo"></div>
-          </div>
-          <div class="ejes"><span>x = 0</span><span id="e-flujo">x = W</span></div>
-          <div class="cbar" id="cb-flujo"></div>
-          <div class="cbar-pies"><span id="cbmin-flujo"></span><span id="cbmax-flujo"></span></div>
-        </figure>
-        <figure class="mapa">
-          <figcaption><div><h3>Temperatura del aire</h3><p class="sub">T salida de cada porción [°C] · soldaduras en negro</p></div>
-            <button class="descargar" data-descargar="fluido" title="Descargar el mapa como PNG">PNG ↓</button></figcaption>
-          <div class="lienzo" id="l-fluido">
-            <canvas class="campo" id="c-fluido"></canvas><canvas class="capa" id="o-fluido"></canvas>
-            <div class="globo" id="g-fluido"></div>
-          </div>
-          <div class="ejes"><span>x = 0</span><span id="e-fluido">x = W</span></div>
-          <div class="cbar" id="cb-fluido"></div>
-          <div class="cbar-pies"><span id="cbmin-fluido"></span><span id="cbmax-fluido"></span></div>
-        </figure>
-        <figure class="mapa">
-          <figcaption><div><h3>Temperatura de pared</h3><p class="sub">T<sub>w</sub> [°C] · límite AISI 321 en rojo</p></div>
-            <button class="descargar" data-descargar="pared" title="Descargar el mapa como PNG">PNG ↓</button></figcaption>
-          <div class="lienzo" id="l-pared">
-            <canvas class="campo" id="c-pared"></canvas><canvas class="capa" id="o-pared"></canvas>
-            <div class="globo" id="g-pared"></div>
-          </div>
-          <div class="ejes"><span>x = 0</span><span id="e-pared">x = W</span></div>
-          <div class="cbar" id="cb-pared"></div>
-          <div class="cbar-pies"><span id="cbmin-pared"></span><span id="cbmax-pared"></span></div>
-        </figure>
-      </section>
-
-      <section class="graficas">
-        <div class="tarjeta">
-          <div class="tarjeta-cab">
-            <h3>Perfil de salida del aire</h3>
-            <span class="sub">en <i>y</i> = L
-              <button class="descargar" data-descargar="perfil" title="Descargar la gráfica como PNG">PNG ↓</button></span>
-          </div>
-          <p class="sub" style="color:var(--muted)">Con <i>λ</i> = 1 las columnas son adiabáticas y el perfil reproduce la campana; al bajar <i>λ</i> la mezcla fila a fila lo aplana. El efecto se compone en cada fila: casi todo ocurre entre 0,9 y 1.</p>
-          <div class="leyenda">
-            <span><i style="background:var(--fluido)"></i>Aire a la salida</span>
-          </div>
-          <div class="grafica" id="g-perfil"></div>
-        </div>
-        <div class="tarjeta">
-          <div class="tarjeta-cab">
-            <h3>Recorrido de la columna <span class="num" id="col-sel">5</span></h3>
-            <span class="sub"><span id="col-x"></span>
-              <button class="descargar" data-descargar="columna" title="Descargar la gráfica como PNG">PNG ↓</button></span>
-          </div>
-          <div class="leyenda">
-            <span><i style="background:var(--fluido)"></i>Aire</span>
-            <span><i style="background:var(--pared)"></i>Pared</span>
-            <span><i style="background:var(--crit); height:0; border-top:2px dashed var(--crit)"></i>Límite AISI 321 (877 °C)</span>
-          </div>
-          <div class="grafica" id="g-columna"></div>
-        </div>
-      </section>
-
-      <section class="abajo">
-        <div class="tarjeta">
-          <div class="tarjeta-cab"><h3>Porción seleccionada</h3><span class="sub" id="nodo-ij"></span></div>
-          <table class="nodo-tabla">
-            <tbody>
-              <tr><th>Posición del centro</th><td id="n-pos"></td></tr>
-              <tr><th>Flujo incidente q″</th><td id="n-q"></td></tr>
-              <tr><th>Aire, entrada → salida</th><td id="n-t"></td></tr>
-              <tr><th>Salida tras la mezcla</th><td id="n-tm"></td></tr>
-              <tr><th>Temperatura de pared</th><td id="n-tw"></td></tr>
-              <tr><th>Calor al fluido</th><td id="n-qf"></td></tr>
-              <tr><th>Pérdidas al ambiente</th><td id="n-qp"></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="tarjeta">
-          <div class="tarjeta-cab"><h3>Lo que el modelo supone</h3></div>
-          <div class="hip">
-            <ul>
-              <li>La malla la dicta el panel: una porción por celda del patrón de soldaduras, <i>s</i><sub>T</sub> de ancho y 2<i>s</i><sub>L</sub> de alto, con un punto de soldadura en el centro y un cuarto en cada esquina.</li>
-              <li>Cada fila se resuelve con columnas <strong>adiabáticas</strong> y su salida se pondera, en entalpía, con la de <strong>mezcla completa</strong> de la fila mediante <i>λ</i>. Así la mezcla conserva la energía para cualquier <i>λ</i>.</li>
-              <li>Las <strong>soldaduras</strong> reciben flujo y pierden calor, pero no ceden calor al fluido porque no tienen aire detrás: se descuentan del área de intercambio. No se consideran soldaduras de borde.</li>
-              <li>El flujo de cada porción se <strong>integra</strong> dentro de la celda con la función error, no se muestrea en su centro: la suma nodal reproduce la potencia total exactamente.</li>
-              <li>El salto de calor del aire se escribe con <strong>entalpías</strong>, no con <code>cp·ΔT</code>: con saltos de 200–400 K por columna, el c<sub>p</sub> de la entrada se dejaría un 7 % del calor.</li>
-              <li>La sección de paso es la de la ec. (16) sin soldaduras de borde, <i>b</i><sub>i</sub>/√2·<i>W</i>, y el gasto se reparte por igual entre columnas: la velocidad es la misma en todas.</li>
-              <li>La <strong>pérdida de carga</strong> es la ec. (19) fila a fila, más el término de aceleración del gas, bajando la presión a lo largo del canal. El cálculo térmico no depende de la presión.</li>
-              <li>No se considera la reradiación entre porciones ni la redistribución del gasto por diferencias de pérdida de carga entre columnas.</li>
-            </ul>
-          </div>
-        </div>
-      </section>
-    </div>
-
-    <p class="pie-fuente">
-      Traducción a JavaScript de <span style="color:var(--ink-2)">modelo_receptor/{mapa, props_fluido, receptor}.py</span>
-      y <span style="color:var(--ink-2)">modelo_termohidraulico/{formulas, asignacion, geometria}.py</span>.
-      Mismas ecuaciones, mismas constantes y la misma bisección anidada; reproduce el caso de referencia nodo a nodo.
-      Aire seco por ajuste a CoolProp 7.2.0; Nu del canal interno por la ec. (20) de O. Arsenyeva et al.
+<!-- =============================================================== octogono -->
+<section class="bloque" id="octogono">
+  <div class="cab-sec rv">
+    <span class="sobre">El caso de estudio</span>
+    <h2>Ocho placas alrededor de la torre</h2>
+    <p>
+      El receptor es un prisma octogonal. La sal fría entra por la zona de más flujo,
+      la que mira al campo, y sube en serpentín por las cuatro placas de cada mitad
+      hasta salir por detrás, caliente. Toca una placa.
     </p>
-  </main>
-</div>
-</div>
+  </div>
 
-<script src="fisica.js"></script>
+  <div class="dos">
+    <div class="panel rv">
+      <svg id="svg-oct" viewBox="0 0 900 540" role="img" aria-label="Vista en planta del receptor octogonal con el campo de helióstatos">
+        <g id="campo"></g>
+        <g id="haces"></g>
+        <g class="giro" opacity=".5"><circle cx="450" cy="250" r="205" fill="none" stroke="#ffffff22" stroke-dasharray="2 12" stroke-linecap="round"/></g>
+        <g id="placas-oct"></g>
+        <circle cx="450" cy="250" r="34" fill="#0d0d0d" stroke="#ffffff44"/>
+        <text x="450" y="255" text-anchor="middle" font-size="13" fill="#ffffffaa">torre</text>
+        <g id="etq-oct" font-size="12.5" fill="#ffffff99"></g>
+      </svg>
+    </div>
+    <div class="rv" style="--d:.12s">
+      <ul class="lista" id="lista-placas"></ul>
+      <p id="info-placa">Pasa el puntero (o toca) por encima de las placas.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================= cifras -->
+<section class="bloque" id="cifras">
+  <div class="cab-sec rv">
+    <span class="sobre">De un vistazo</span>
+    <h2>El receptor final, en cuatro números</h2>
+  </div>
+  <div class="cifras rv">
+    <div class="cifra"><div class="num" data-n="8">0</div><p>pillow plates en el octógono</p></div>
+    <div class="cifra"><div class="num" data-n="10.5" data-d="1">0<span class="u">m</span></div><p>de altura de cada placa</p></div>
+    <div class="cifra"><div class="num" data-n="565" data-ini="290">0<span class="u">°C</span></div><p>de salida, desde 290 °C de entrada</p></div>
+    <div class="cifra"><div class="num" data-n="0">0</div><p>servidores: el cálculo corre en tu navegador</p></div>
+  </div>
+</section>
+
+<!-- ================================================================ modelos -->
+<section class="bloque" id="modelos">
+  <div class="cab-sec rv">
+    <span class="sobre">Pruébalo</span>
+    <h2>Dos modelos que corren en tu navegador</h2>
+    <p>Mueve la mancha, cambia el gasto o la geometría del panel y mira cómo se reparte el calor porción a porción.</p>
+  </div>
+  <div class="modelos">
+    <a class="modelo rv" href="octogonal/">
+      <span class="marca-tag">Caso de estudio final</span>
+      <div class="vista"><canvas class="mini" data-modo="sal"></canvas></div>
+      <div class="cuerpo">
+        <h3>Receptor octogonal de sal solar</h3>
+        <p>Geometría del panel dentro de las correlaciones de Piper, pérdidas y mancha como parámetros. Da el gasto, los campos de temperatura y el reparto placa a placa.</p>
+        <span class="ir">Abrir el modelo <span class="fl">→</span></span>
+      </div>
+    </a>
+    <a class="modelo rv" href="aire/" style="--d:.1s">
+      <span class="marca-tag">Demostración</span>
+      <div class="vista"><canvas class="mini" data-modo="aire"></canvas></div>
+      <div class="cuerpo">
+        <h3>Una placa con aire</h3>
+        <p>El modelo más sencillo, para ver la mecánica: mapa de flujo incidente, temperatura del aire y de la pared, perfil de salida y recorrido de cada columna.</p>
+        <span class="ir">Abrir el modelo <span class="fl">→</span></span>
+      </div>
+    </a>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="linea">
+    <span>Receptor solar PPHE · TFG de Ingeniería Mecánica</span>
+    <span>Las animaciones de esta página son ilustrativas; las cifras rigurosas están en los modelos.</span>
+  </div>
+</footer>
+
 <script>
-(function(){
 'use strict';
-var C = RCP.CERO_CELSIUS;
-var LIM_C = RCP.LIMITE_AISI321 - C;
-
-/* ------------------------------------------------------------- formato -- */
-function n(v, d){
-  if (!isFinite(v)) return '–';
-  var s = v.toFixed(d === undefined ? 1 : d);
-  return s.replace('.', ',');
-}
-function nexp(v){
-  if (!isFinite(v)) return '–';
-  var e = Math.floor(Math.log10(Math.abs(v)));
-  return n(v / Math.pow(10, e), 2) + '·10' + sup(e);
-}
-function sup(e){
-  var m = {'-':'⁻','0':'⁰','1':'¹','2':'²','3':'³','4':'⁴',
-           '5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹'};
-  return String(e).split('').map(function(c){ return m[c] || c; }).join('');
-}
-
-/* ---------------------------------------------------------- escalas ----- */
-// matplotlib 'hot': los tres tramos negro -> rojo -> amarillo -> blanco.
-function hot(t){
-  var r = Math.min(Math.max(t / 0.365079, 0), 1);
-  var g = Math.min(Math.max((t - 0.365079) / (0.746032 - 0.365079), 0), 1);
-  var b = Math.min(Math.max((t - 0.746032) / (1 - 0.746032), 0), 1);
-  return [r * 255, g * 255, b * 255];
-}
-// 'inferno', la versión perceptualmente uniforme, por interpolación de anclas.
-var INFERNO = [[0,0,4],[27,12,65],[74,12,107],[120,28,109],[165,44,96],
-               [207,68,70],[237,105,37],[251,155,6],[252,255,164]];
-function inferno(t){
-  t = Math.min(Math.max(t, 0), 1);
-  var f = t * (INFERNO.length - 1), i = Math.min(Math.floor(f), INFERNO.length - 2), u = f - i;
-  var a = INFERNO[i], b = INFERNO[i + 1];
-  return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u];
-}
-var ESCALAS = { hot: hot, inferno: inferno };
-function gradienteCss(fn){
-  var paradas = [];
-  for (var i = 0; i <= 24; i++){
-    var c = fn(i / 24);
-    paradas.push('rgb(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ') ' +
-                 (i / 24 * 100).toFixed(1) + '%');
-  }
-  return 'linear-gradient(to right,' + paradas.join(',') + ')';
-}
-
-/* ---------------------------------------------------------- estado ------ */
-var PRESETS = {
-  referencia: { modo:'pico', q_pico:200, Q:236, sigma_x:0.5, sigma_y:0.5, L:1.5, W:1.5,
-                lam:RCP.LAMBDA, G:0.9, T_ent:300, p:10, h_ext:20, eps:0.85, alfa:1, panel:'PPHE1',
-                familia:'longitudinal', s_t:72, s_l:21, b_i:3.4, d_sp:7.2 },
-  pico:       { modo:'pico', q_pico:400, Q:472, sigma_x:0.5, sigma_y:0.5, L:1.5, W:1.5,
-                lam:RCP.LAMBDA, G:0.9, T_ent:300, p:10, h_ext:20, eps:0.85, alfa:1, panel:'PPHE1',
-                familia:'longitudinal', s_t:72, s_l:21, b_i:3.4, d_sp:7.2 },
-  ancha:      { modo:'pico', q_pico:200, Q:396, sigma_x:1.2, sigma_y:1.2, L:1.5, W:1.5,
-                lam:RCP.LAMBDA, G:0.9, T_ent:300, p:10, h_ext:20, eps:0.85, alfa:1, panel:'PPHE1',
-                familia:'longitudinal', s_t:72, s_l:21, b_i:3.4, d_sp:7.2 }
-};
-var est = Object.assign({}, PRESETS.referencia);
-var cmap = 'hot';
-var sel = null;             // {i, j} porción seleccionada
-var ultimo = null;          // último resultado válido
-
-var DESLIZ = ['q_pico','Q','sigma_x','sigma_y','L','W','lam','G','T_ent','p','h_ext','eps','alfa','s_t','s_l','b_i','d_sp'];
-var UNIDAD = {
-  q_pico:['kW/m²',0], Q:['kW',0], sigma_x:['m',2], sigma_y:['m',2], L:['m',2], W:['m',2],
-  lam:['',2], G:['kg/s',2], T_ent:['°C',0], p:['bar',1],
-  h_ext:['W/m²K',0], eps:['',2], alfa:['',2], s_t:['mm',1], s_l:['mm',2], b_i:['mm',2], d_sp:['mm',2]
-};
-var $ = function(id){ return document.getElementById(id); };
-
-/* ---------------------------------------------------------- celda ------- */
-// Piper no da rangos de s_T, s_L, b_i y d_sp sueltos, sino de tres cocientes:
-// a = s2L/sT, b = dsp/sT y c = b_i/sT, distintos en cada familia de celda. Los
-// cuatro valores quedan acoplados, y cada deslizador recorre lo que admite la
-// correlación CON LOS OTROS TRES FIJOS. Así todo movimiento es válido; para
-// llegar a una esquina del dominio hay que mover varios. Todo en mm.
-
-// Rango de fabricación del punto de soldadura que dan Piper et al. (ver la
-// nota de d_sp en modelo_termohidraulico/geometria.py)
-var D_SP_FABRICACION = [7.2, 10.0];
-
-// Redondea hacia dentro al paso del deslizador. toFixed quita el ruido de coma
-// flotante (14.700000000000001), que corría la rejilla del deslizador y le
-// impedía llegar a su máximo.
-function dentroPaso(v, paso, arriba){
-  var k = v / paso;
-  return +((arriba ? Math.floor(k + 1e-9) : Math.ceil(k - 1e-9)) * paso).toFixed(2);
-}
-function redondearRango(r, paso){ return [dentroPaso(r[0], paso, false), dentroPaso(r[1], paso, true)]; }
-// El valor actual es siempre válido, pero el redondeo hacia dentro podría
-// dejarlo fuera del deslizador por una centésima: se estira el rango hasta él.
-function incluir(r, v){ return [Math.min(r[0], v), Math.max(r[1], v)]; }
-function acotar(v, r){ return Math.min(Math.max(v, r[0]), r[1]); }
-function familia(id){
-  for (var k = 0; k < RCP.FAMILIAS.length; k++) if (RCP.FAMILIAS[k].id === id) return RCP.FAMILIAS[k];
-  return RCP.FAMILIAS[0];
-}
-
-// Rango de cada valor con los otros tres fijos
-function rangosCelda(e){
-  var f = familia(e.familia), t = e.s_t;
-  var sT = [Math.max(e.d_sp / f.b[1], e.b_i / f.c[1]), Math.min(e.d_sp / f.b[0], e.b_i / f.c[0])];
-  var dsp = [Math.max(f.b[0] * t, D_SP_FABRICACION[0]), Math.min(f.b[1] * t, D_SP_FABRICACION[1])];
-  return {
-    sT:  incluir(redondearRango(sT, 0.1), t),
-    sL:  incluir(redondearRango([f.a[0] * t / 2, f.a[1] * t / 2], 0.05), e.s_l),
-    b_i: incluir(redondearRango([f.c[0] * t, f.c[1] * t], 0.05), e.b_i),
-    d_sp: incluir(redondearRango(dsp, 0.05), e.d_sp),
-    familia: f
-  };
-}
-
-// Lleva la celda a la familia elegida tocando lo mínimo: d_sp se queda, s_T va
-// al punto más cercano que d_sp admite, b_i entra en lo que admite ese s_T, y
-// s_L conserva la relación s_L/s_T si puede.
-function ajustarCelda(){
-  var f = familia(est.familia);
-  var relacion = est.s_l / est.s_t;
-  est.d_sp = +acotar(est.d_sp, D_SP_FABRICACION).toFixed(2);
-  est.s_t = +acotar(est.s_t, redondearRango([est.d_sp / f.b[1], est.d_sp / f.b[0]], 0.1)).toFixed(1);
-  est.b_i = +acotar(est.b_i, redondearRango([f.c[0] * est.s_t, f.c[1] * est.s_t], 0.05)).toFixed(2);
-  est.s_l = +acotar(dentroPaso(relacion * est.s_t, 0.05, false),
-                    redondearRango([f.a[0] * est.s_t / 2, f.a[1] * est.s_t / 2], 0.05)).toFixed(2);
-}
-
-/* ---------------------------------------------------------- mandos ------ */
-function pintarMandos(){
-  // Los extremos de la celda van ANTES que los valores: un input range recorta
-  // el valor a su min/max en cuanto se lo asigna.
-  var rc = rangosCelda(est);
-  [['s_t', rc.sT], ['s_l', rc.sL], ['b_i', rc.b_i], ['d_sp', rc.d_sp]].forEach(function(par){
-    $(par[0]).min = par[1][0]; $(par[0]).max = par[1][1];
-  });
-  var f = rc.familia;
-  $('nota-celda').textContent = 'Piper, ' + f.nombre + ': s₂L/s_T ' + n(f.a[0], 2) + '–' + n(f.a[1], 2) +
-    ' · d_sp/s_T ' + n(f.b[0], 2) + '–' + n(f.b[1], 2) + ' · b_i/s_T ' + n(f.c[0], 3) + '–' + n(f.c[1], 3) +
-    '. Cada deslizador recorre lo que admiten los otros tres.';
-  Array.prototype.forEach.call($('familia').children, function(b){
-    b.setAttribute('aria-pressed', String(b.dataset.familia === est.familia));
-  });
-  DESLIZ.forEach(function(k){
-    var inp = $(k);
-    if (document.activeElement !== inp) inp.value = est[k];
-    var u = UNIDAD[k];
-    inp.parentNode.querySelector('.mando-val').innerHTML =
-      '<span>' + n(est[k], u[1]) + '</span>' + (u[0] ? ' <span class="u">' + u[0] + '</span>' : '');
-  });
-  $('m-qpico').hidden = est.modo !== 'pico';
-  $('m-Q').hidden = est.modo !== 'potencia';
-  Array.prototype.forEach.call($('modo').children, function(b){
-    b.setAttribute('aria-pressed', String(b.dataset.modo === est.modo));
-  });
-  Array.prototype.forEach.call($('cmap').children, function(b){
-    b.setAttribute('aria-pressed', String(b.dataset.cmap === cmap));
-  });
-}
-
-DESLIZ.forEach(function(k){
-  $(k).addEventListener('input', function(){
-    var relacion = est.s_l / est.s_t;
-    est[k] = parseFloat(this.value);
-    // s_T arrastra a s_L para conservar la forma de la celda
-    if (k === 's_t'){ est.s_l = relacion * est.s_t; ajustarCelda(); }
-    marcarPreset(null);
-    pintarMandos();
-    calcular();
-  });
-});
-$('modo').addEventListener('click', function(e){
-  var b = e.target.closest('button'); if (!b) return;
-  est.modo = b.dataset.modo; marcarPreset(null); pintarMandos(); calcular();
-});
-$('cmap').addEventListener('click', function(e){
-  var b = e.target.closest('button'); if (!b) return;
-  cmap = b.dataset.cmap; pintarMandos(); if (ultimo) pintar(ultimo);
-});
-$('familia').addEventListener('click', function(e){
-  var b = e.target.closest('button'); if (!b) return;
-  if (b.dataset.familia === est.familia) return;
-  est.familia = b.dataset.familia;
-  // s2L/sT cambia de golpe entre familias: s_L se lleva a la relación central
-  var f = familia(est.familia);
-  est.s_l = est.s_t * (f.a[0] + f.a[1]) / 4;
-  ajustarCelda();
-  marcarPreset(null); pintarMandos(); calcular();
-});
-$('presets').addEventListener('click', function(e){
-  var b = e.target.closest('button'); if (!b) return;
-  est = Object.assign({}, PRESETS[b.dataset.preset]);
-  sel = null; marcarPreset(b.dataset.preset); pintarMandos(); calcular();
-});
-function marcarPreset(nombre){
-  Array.prototype.forEach.call($('presets').children, function(b){
-    b.setAttribute('aria-pressed', String(b.dataset.preset === nombre));
-  });
-}
-
-/* ---------------------------------------------------------- cálculo ----- */
-var pendiente = null;
-function calcular(){
-  if (pendiente) cancelAnimationFrame(pendiente);
-  pendiente = requestAnimationFrame(function(){
-    pendiente = null;
-    var cfg = {
-      L: est.L, W: est.W, modo: est.modo,
-      q_pico: est.q_pico * 1e3, Q: est.Q * 1e3,
-      sigma_x: est.sigma_x, sigma_y: est.sigma_y,
-      G: est.G, T_ent: est.T_ent + C, p: est.p * 1e5,
-      lam: est.lam, panel: est.panel,
-      s_t: est.s_t / 1000, s_2l: 2 * est.s_l / 1000,
-      b_i: est.b_i / 1000, d_sp: est.d_sp / 1000,
-      h_ext: est.h_ext, eps: est.eps, alfa: est.alfa
-    };
-    var r;
-    try { r = RCP.resolver(cfg); }
-    catch (err){
-      $('aviso').dataset.visible = '1';
-      $('aviso-msg').textContent = err.message || 'El modelo no converge con estos parámetros.';
-      $('aviso-consejo').textContent = err.consejo || '';
-      $('resultados').style.opacity = '.4';
-      return;
-    }
-    $('aviso').dataset.visible = '0';
-    $('resultados').style.opacity = '1';
-    ultimo = r;
-    if (!sel || sel.i >= r.T_fluido[0].length || sel.j >= r.T_fluido.length)
-      sel = nodoMasCaliente(r);
-    pintar(r);
-  });
-}
-function nodoMasCaliente(r){
-  var mi = 0, mj = 0, mx = -Infinity;
-  for (var j = 0; j < r.T_pared.length; j++)
-    for (var i = 0; i < r.T_pared[j].length; i++)
-      if (r.T_pared[j][i] > mx){ mx = r.T_pared[j][i]; mi = i; mj = j; }
-  return { i: mi, j: mj };
-}
-
-/* ---------------------------------------------------------- mapas ------- */
-var MAPAS = [
-  { id:'flujo',  datos:function(r){ return r.flujo; },   esc:1e-3 },
-  { id:'fluido', datos:function(r){ return r.T_fluido; }, esc:1, off:-C, soldaduras:true },
-  { id:'pared',  datos:function(r){ return r.T_pared; },  esc:1, off:-C, limite:true }
-];
-
-function pintarMapa(spec, r){
-  var campo = spec.datos(r);
-  var N = campo.length, M = campo[0].length;
-  var fn = ESCALAS[cmap];
-  var mn = Infinity, mx = -Infinity, j, i, v;
-  for (j = 0; j < N; j++) for (i = 0; i < M; i++){
-    v = campo[j][i] * spec.esc + (spec.off || 0);
-    if (v < mn) mn = v; if (v > mx) mx = v;
-  }
-  var rango = (mx - mn) || 1;
-
-  var lienzo = $('l-' + spec.id);
-  lienzo.style.aspectRatio = r.mapa.W + ' / ' + r.mapa.L;
-
-  // Campo: un píxel por porción, escalado por CSS con image-rendering pixelated
-  // (el equivalente del interpolation='nearest' de las figuras de matplotlib).
-  var cv = $('c-' + spec.id);
-  cv.width = M; cv.height = N;
-  var ctx = cv.getContext('2d');
-  var img = ctx.createImageData(M, N);
-  for (j = 0; j < N; j++) for (i = 0; i < M; i++){
-    v = campo[j][i] * spec.esc + (spec.off || 0);
-    var c = fn((v - mn) / rango);
-    var k = (((N - 1 - j) * M) + i) * 4;      // origen abajo-izquierda
-    img.data[k] = c[0]; img.data[k+1] = c[1]; img.data[k+2] = c[2]; img.data[k+3] = 255;
-  }
-  ctx.putImageData(img, 0, 0);
-
-  // Capa: contorno del límite AISI 321 y celda seleccionada, a resolución de
-  // pantalla para que las líneas salgan nítidas.
-  var ov = $('o-' + spec.id);
-  var ancho = lienzo.clientWidth, alto = lienzo.clientHeight;
-  var dpr = Math.min(window.devicePixelRatio || 1, 2);
-  ov.width = Math.max(1, Math.round(ancho * dpr));
-  ov.height = Math.max(1, Math.round(alto * dpr));
-  var o = ov.getContext('2d');
-  o.setTransform(dpr, 0, 0, dpr, 0, 0);
-  o.clearRect(0, 0, ancho, alto);
-  var dx = ancho / M, dy = alto / N;
-  var rect = function(i, j){ return [i * dx, (N - 1 - j) * dy, dx, dy]; };
-
-  if (spec.limite)
-    contornoLimite(o, campo, ancho, alto,
-                   getComputedStyle(document.body).getPropertyValue('--crit').trim() || '#B23227', 1.5);
-  if (spec.soldaduras) pintarSoldaduras(o, r, ancho, alto);
-  if (sel){
-    var s = rect(sel.i, sel.j);
-    o.strokeStyle = '#ffffff'; o.lineWidth = 2.5;
-    // Con 71 filas una celda mide pocos píxeles: el recuadro no baja de 6 px
-    var cx = s[0] + s[2] / 2, cy = s[1] + s[3] / 2;
-    var rw = Math.max(s[2] - 2.5, 6), rh = Math.max(s[3] - 2.5, 6);
-    o.strokeRect(cx - rw / 2, cy - rh / 2, rw, rh);
-    o.strokeStyle = '#000000'; o.lineWidth = 1;
-    o.strokeRect(cx - rw / 2, cy - rh / 2, rw, rh);
-    o.strokeStyle = 'rgba(255,255,255,.55)'; o.lineWidth = 1;
-    o.strokeRect(sel.i * dx + 0.5, 0.5, dx - 1, alto - 1);   // la columna entera
-  }
-
-  $('cb-' + spec.id).style.background = gradienteCss(fn);
-  var dec = spec.id === 'flujo' ? 0 : 0;
-  $('cbmin-' + spec.id).textContent = n(mn, dec);
-  $('cbmax-' + spec.id).textContent = n(mx, dec) + (spec.id === 'flujo' ? ' kW/m²' : ' °C');
-  $('e-' + spec.id).textContent = 'x = ' + n(r.mapa.W, 2) + ' m';
-}
-
-// Contorno de la zona de pared por encima del límite del AISI 321. Solo se
-// trazan los lados de celda que dan al exterior de la región: queda el borde.
-function contornoLimite(o, campo, ancho, alto, color, grosor){
-  var N = campo.length, M = campo[0].length, dx = ancho / M, dy = alto / N, i, j;
-  var L = RCP.LIMITE_AISI321;
-  o.strokeStyle = color; o.lineWidth = grosor;
-  o.beginPath();
-  for (j = 0; j < N; j++) for (i = 0; i < M; i++){
-    if (campo[j][i] <= L) continue;
-    var x = i * dx, y = (N - 1 - j) * dy;
-    if (j === N-1 || campo[j+1][i] <= L){ o.moveTo(x, y); o.lineTo(x + dx, y); }
-    if (j === 0   || campo[j-1][i] <= L){ o.moveTo(x, y + dy); o.lineTo(x + dx, y + dy); }
-    if (i === 0   || campo[j][i-1] <= L){ o.moveTo(x, y); o.lineTo(x, y + dy); }
-    if (i === M-1 || campo[j][i+1] <= L){ o.moveTo(x + dx, y); o.lineTo(x + dx, y + dy); }
-  }
-  o.stroke();
-}
-
-// Los puntos de soldadura, a escala y al tresbolillo. Cada porción es la celda
-// s_T x 2s_L de Piper: un punto en el centro y uno en cada esquina, compartido
-// con las celdas vecinas. En los bordes de la placa el lienzo recorta los de las
-// esquinas. El modelo solo usa la fracción de área, así que el dibujo es la
-// disposición real, no un dato del cálculo.
-function pintarSoldaduras(o, r, ancho, alto){
-  var ex = ancho / r.mapa.W, ey = alto / r.mapa.L;      // px por metro
-  var M = r.M, N = r.N, i, j;
-  var px = r.dx * ex, py = r.dy * ey;                     // tamaño de celda en px
-  o.fillStyle = '#000000';
-  // Exactamente a escala: el diámetro es el d_sp del deslizador, sin mínimos
-  var rx = r.panel.d_sp / 2 * ex, ry = r.panel.d_sp / 2 * ey;
-  function punto(x, y){ o.moveTo(x + rx, y); o.ellipse(x, y, rx, ry, 0, 0, 2 * Math.PI); }
-  o.save();
-  o.beginPath(); o.rect(0, 0, ancho, alto); o.clip();
-  o.beginPath();
-  for (j = 0; j <= N; j++) for (i = 0; i <= M; i++) punto(i * px, alto - j * py);          // esquinas
-  for (j = 0; j < N; j++) for (i = 0; i < M; i++) punto((i + 0.5) * px, alto - (j + 0.5) * py); // centros
-  o.fill();
-  o.restore();
-}
-
-function celdaDesdeEvento(ev, r){
-  var lienzo = ev.currentTarget;
-  var caja = lienzo.getBoundingClientRect();
-  var M = r.T_fluido[0].length, N = r.T_fluido.length;
-  var i = Math.floor((ev.clientX - caja.left) / caja.width * M);
-  var j = N - 1 - Math.floor((ev.clientY - caja.top) / caja.height * N);
-  i = Math.min(Math.max(i, 0), M - 1); j = Math.min(Math.max(j, 0), N - 1);
-  return { i: i, j: j, caja: caja };
-}
-
-MAPAS.forEach(function(spec){
-  var lienzo = $('l-' + spec.id), globo = $('g-' + spec.id);
-  lienzo.addEventListener('mousemove', function(ev){
-    if (!ultimo) return;
-    var c = celdaDesdeEvento(ev, ultimo), r = ultimo;
-    globo.innerHTML =
-      '<b>' + n(r.xCentros[c.i], 3) + ' , ' + n(r.yCentros[c.j], 3) + '</b> m<br>' +
-      'q″ ' + n(r.flujo[c.j][c.i] / 1e3, 1) + ' kW/m²<br>' +
-      'aire ' + n(r.T_fluido[c.j][c.i] - C, 0) + ' °C · pared ' + n(r.T_pared[c.j][c.i] - C, 0) + ' °C';
-    globo.style.left = Math.min(Math.max(ev.clientX - c.caja.left, 60), c.caja.width - 60) + 'px';
-    globo.style.top = Math.max(ev.clientY - c.caja.top - 10, 56) + 'px';
-    globo.style.opacity = '1';
-  });
-  lienzo.addEventListener('mouseleave', function(){ globo.style.opacity = '0'; });
-  lienzo.addEventListener('click', function(ev){
-    if (!ultimo) return;
-    var c = celdaDesdeEvento(ev, ultimo);
-    sel = { i: c.i, j: c.j };
-    pintar(ultimo);
-  });
-});
-
-/* ---------------------------------------------------------- gráficas ---- */
-var NS = 'http://www.w3.org/2000/svg';
-function el(t, a){
-  var e = document.createElementNS(NS, t);
-  for (var k in a) e.setAttribute(k, a[k]);
+/* ------------------------------------------------------------------ utiles */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs = {}, padre) => {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (padre) padre.appendChild(e);
   return e;
-}
-function bonito(mn, mx, cuantos){
-  var bruto = (mx - mn) / cuantos;
-  var mag = Math.pow(10, Math.floor(Math.log10(bruto)));
-  var norm = bruto / mag;
-  var paso = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag;
-  var t = [], v = Math.ceil(mn / paso) * paso;
-  for (; v <= mx + paso * 1e-6; v += paso) t.push(Math.round(v / paso) * paso);
-  return t;
-}
-
-/* Dibuja una o dos series sobre unos ejes comunes. Un solo par de escalas:
-   nunca dos ejes y, que es el error clásico de las gráficas de dos medidas. */
-function grafica(destino, cfg){
-  var A = 520, H = 280, ml = 52, mr = 16, mt = 14, mb = 40;
-  var ax = A - ml - mr, ay = H - mt - mb;
-
-  var xs = [], ys = [];
-  cfg.series.forEach(function(s){
-    s.puntos.forEach(function(p){ xs.push(p[0]); ys.push(p[1]); });
-  });
-  var x0 = cfg.x0 != null ? cfg.x0 : Math.min.apply(null, xs);
-  var x1 = cfg.x1 != null ? cfg.x1 : Math.max.apply(null, xs);
-  var y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
-  var hueco = (y1 - y0) || 1;
-  y0 -= hueco * 0.12; y1 += hueco * 0.16;
-
-  var X = function(v){ return ml + (v - x0) / ((x1 - x0) || 1) * ax; };
-  var Y = function(v){ return mt + ay - (v - y0) / ((y1 - y0) || 1) * ay; };
-
-  var svg = el('svg', { viewBox: '0 0 ' + A + ' ' + H, role: 'img', 'aria-label': cfg.alt });
-  var css = getComputedStyle(document.body);
-  var cLinea = css.getPropertyValue('--linea').trim();
-  var cMudo = css.getPropertyValue('--muted').trim();
-  var cInk = css.getPropertyValue('--ink-2').trim();
-
-  bonito(y0, y1, 5).forEach(function(v){
-    svg.appendChild(el('line', { x1: ml, x2: ml + ax, y1: Y(v), y2: Y(v),
-                                 stroke: cLinea, 'stroke-width': 1 }));
-    var t = el('text', { x: ml - 8, y: Y(v) + 3.5, fill: cMudo, 'font-size': 11,
-                         'text-anchor': 'end', 'font-family': 'Inter, sans-serif', 'font-variant-numeric': 'tabular-nums' });
-    t.textContent = n(v, cfg.decY || 0); svg.appendChild(t);
-  });
-  bonito(x0, x1, 5).forEach(function(v){
-    var t = el('text', { x: X(v), y: mt + ay + 17, fill: cMudo, 'font-size': 11,
-                         'text-anchor': 'middle', 'font-family': 'Inter, sans-serif', 'font-variant-numeric': 'tabular-nums' });
-    t.textContent = n(v, 2); svg.appendChild(t);
-  });
-  svg.appendChild(el('line', { x1: ml, x2: ml + ax, y1: mt + ay, y2: mt + ay,
-                               stroke: css.getPropertyValue('--linea-fuerte').trim(), 'stroke-width': 1 }));
-
-  var ejeX = el('text', { x: ml + ax / 2, y: H - 6, fill: cInk, 'font-size': 11,
-                          'text-anchor': 'middle' });
-  ejeX.textContent = cfg.ejeX; svg.appendChild(ejeX);
-  var ejeY = el('text', { x: 12, y: mt + ay / 2, fill: cInk, 'font-size': 11,
-                          'text-anchor': 'middle', transform: 'rotate(-90 12 ' + (mt + ay / 2) + ')' });
-  ejeY.textContent = cfg.ejeY; svg.appendChild(ejeY);
-
-  if (cfg.refY != null && cfg.refY > y0 && cfg.refY < y1){
-    var cCrit = css.getPropertyValue('--crit').trim();
-    svg.appendChild(el('line', { x1: ml, x2: ml + ax, y1: Y(cfg.refY), y2: Y(cfg.refY),
-                                 stroke: cCrit, 'stroke-width': 1.5, 'stroke-dasharray': '5 4' }));
-  }
-
-  cfg.series.forEach(function(s){
-    var d = s.puntos.map(function(p, k){ return (k ? 'L' : 'M') + X(p[0]) + ' ' + Y(p[1]); }).join(' ');
-    svg.appendChild(el('path', { d: d, fill: 'none', stroke: s.color, 'stroke-width': 2,
-                                 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
-    if (s.puntos.length <= 26){
-      s.puntos.forEach(function(p){
-        svg.appendChild(el('circle', { cx: X(p[0]), cy: Y(p[1]), r: 3, fill: s.color,
-                                       stroke: css.getPropertyValue('--surface').trim(), 'stroke-width': 1.5 }));
-      });
-    }
-    // Sin etiquetas sobre las curvas: tapaban los datos. Lo que es cada color lo
-    // dice la leyenda de la tarjeta, y los valores, el globo al pasar el ratón.
-  });
-
-  destino.innerHTML = '';
-  destino.appendChild(svg);
-
-  // Capa de interacción: cruz y globo sobre el punto más próximo en x.
-  var globo = document.createElement('div');
-  globo.className = 'globo';
-  destino.appendChild(globo);
-  var cruz = el('line', { y1: mt, y2: mt + ay, stroke: cMudo, 'stroke-width': 1,
-                          'stroke-dasharray': '3 3', opacity: 0 });
-  svg.appendChild(cruz);
-  var zona = el('rect', { x: ml, y: mt, width: ax, height: ay, fill: 'transparent' });
-  svg.appendChild(zona);
-  zona.addEventListener('mousemove', function(ev){
-    var caja = svg.getBoundingClientRect();
-    var vx = (ev.clientX - caja.left) / caja.width * A;
-    var xv = x0 + (vx - ml) / ax * (x1 - x0);
-    var base = cfg.series[0].puntos;
-    var mejor = 0;
-    for (var k = 1; k < base.length; k++)
-      if (Math.abs(base[k][0] - xv) < Math.abs(base[mejor][0] - xv)) mejor = k;
-    cruz.setAttribute('x1', X(base[mejor][0]));
-    cruz.setAttribute('x2', X(base[mejor][0]));
-    cruz.setAttribute('opacity', 1);
-    globo.innerHTML = '<b>' + n(base[mejor][0], 3) + ' m</b><br>' +
-      cfg.series.map(function(s){
-        return s.nombre + ' ' + n(s.puntos[mejor][1], 0) + ' °C';
-      }).join('<br>');
-    globo.style.left = (X(base[mejor][0]) / A * caja.width) + 'px';
-    globo.style.top = (Y(base[mejor][1]) / H * caja.height - 8) + 'px';
-    globo.style.opacity = '1';
-  });
-  zona.addEventListener('mouseleave', function(){
-    cruz.setAttribute('opacity', 0); globo.style.opacity = '0';
-  });
-}
-
-// Las dos gráficas, como datos: las usan la pantalla y la descarga, cada una
-// con su paleta.
-function cfgPerfil(r, col){
-  return {
-    series: [{ nombre: 'T', leyenda: 'Aire a la salida', color: col.fluido,
-               puntos: r.xCentros.map(function(x, i){ return [x, r.perfilSalida[i] - C]; }) }],
-    x0: 0, x1: r.mapa.W, ejeX: 'x, anchura [m]', ejeY: 'T [°C]', decY: 0,
-    alt: 'Temperatura del aire a la salida en función de la anchura'
-  };
-}
-function cfgColumna(r, i, col){
-  return {
-    series: [
-      { nombre: 'pared', leyenda: 'Pared', color: col.pared,
-        puntos: r.yCentros.map(function(y, j){ return [y, r.T_pared[j][i] - C]; }) },
-      { nombre: 'aire', leyenda: 'Aire', color: col.fluido,
-        puntos: r.yCentros.map(function(y, j){ return [y, r.T_fluido[j][i] - C]; }) }
-    ],
-    x0: 0, x1: r.mapa.L, ejeX: 'y, altura [m]', ejeY: 'T [°C]', decY: 0,
-    refY: LIM_C, refLeyenda: 'Límite AISI 321 (' + n(LIM_C, 0) + ' °C)',
-    alt: 'Temperatura del aire y de la pared a lo largo de la columna seleccionada'
-  };
-}
-
-/* ---------------------------------------------------------- descarga ----- */
-// Cada figura se vuelve a dibujar desde los datos del último cálculo, sobre un
-// lienzo propio con fondo blanco, para que sirva tal cual en un documento: sin
-// la celda seleccionada ni nada de la interfaz, y con título, ejes, escala de
-// color o leyenda, y una línea con el punto de trabajo. Guardar la imagen del
-// lienzo de la página no sirve: lo de encima es una capa transparente con solo
-// la selección, y los colores de las gráficas salen de variables CSS.
-var IMPRESION = {
-  fondo: '#FFFFFF', tinta: '#1A1A1A', tenue: '#5A5A5A', rejilla: '#E4E4E4', eje: '#8A8A8A',
-  fluido: '#1F63C6', pared: '#D9531E', crit: '#C62828'
 };
-var ESCALA_PNG = 2;                    // px del PNG por px lógico: nítido al imprimir
-var FUENTE = 'Inter, "Segoe UI", Arial, sans-serif';
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const REDUCIDO = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-function lienzoPng(ancho, alto){
-  var cv = document.createElement('canvas');
-  cv.width = Math.round(ancho * ESCALA_PNG); cv.height = Math.round(alto * ESCALA_PNG);
-  var o = cv.getContext('2d');
-  o.scale(ESCALA_PNG, ESCALA_PNG);
-  o.fillStyle = IMPRESION.fondo; o.fillRect(0, 0, ancho, alto);
-  return { cv: cv, o: o };
-}
-function texto(o, t, x, y, tam, color, alinear, peso){
-  o.font = (peso || 400) + ' ' + tam + 'px ' + FUENTE;
-  o.fillStyle = color; o.textAlign = alinear || 'left'; o.textBaseline = 'alphabetic';
-  o.fillText(t, x, y);
-}
-// Dos líneas con lo que hace falta para saber de qué simulación es la figura:
-// el punto de trabajo y la geometría
-function puntoDeTrabajo(r){
-  return [
-    'q″ pico ' + n(r.q_pico / 1e3, 0) + ' kW/m² · G ' + n(est.G, 2) + ' kg/s · T ent ' +
-      n(est.T_ent, 0) + ' °C · p ' + n(est.p, 1) + ' bar · λ ' + n(r.lam, 2),
-    r.n.familia.charAt(0).toUpperCase() + r.n.familia.slice(1) + ' ' + n(r.panel.s_t * 1e3, 1) +
-      ' × ' + n(r.panel.s_2l * 1e3, 1) + ' mm · b_i ' + n(r.panel.b_i * 1e3, 2) + ' mm · d_sp ' +
-      n(r.panel.d_sp * 1e3, 2) + ' mm · malla ' + r.M + ' × ' + r.N
-  ];
-}
-function guardarPng(cv, nombre){
-  cv.toBlob(function(b){
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(b); a.download = nombre;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
-  }, 'image/png');
-}
-
-var TITULOS_MAPA = {
-  flujo:  ['Flujo incidente', 'kW/m²', 'mapa_flujo_incidente.png'],
-  fluido: ['Temperatura del aire', '°C', 'mapa_temperatura_aire.png'],
-  pared:  ['Temperatura de pared', '°C', 'mapa_temperatura_pared.png']
-};
-
-function descargarMapa(id){
-  var r = ultimo; if (!r) return;
-  var spec = MAPAS.filter(function(m){ return m.id === id; })[0], tit = TITULOS_MAPA[id];
-  var campo = spec.datos(r), N = campo.length, M = campo[0].length, fn = ESCALAS[cmap], i, j, v;
-  var mn = Infinity, mx = -Infinity;
-  for (j = 0; j < N; j++) for (i = 0; i < M; i++){
-    v = campo[j][i] * spec.esc + (spec.off || 0); if (v < mn) mn = v; if (v > mx) mx = v;
-  }
-  var rango = (mx - mn) || 1;
-
-  // La placa, a escala: 560 px lógicos en su lado mayor
-  var k = 560 / Math.max(r.mapa.W, r.mapa.L), pw = r.mapa.W * k, ph = r.mapa.L * k;
-  var ml = 78, mt = 112, mr = 140, mb = 66;
-  var ancho = Math.max(ml + pw + mr, 640), alto = mt + ph + mb;
-  var L = lienzoPng(ancho, alto), o = L.o;
-
-  texto(o, tit[0] + ' [' + tit[1] + ']', ml, 32, 20, IMPRESION.tinta, 'left', 600);
-  puntoDeTrabajo(r).forEach(function(t, q){ texto(o, t, ml, 54 + 16 * q, 11.5, IMPRESION.tenue); });
-  var notas = { fluido: 'Salida de cada porción · puntos de soldadura en negro, a escala',
-                pared: 'Contorno rojo: zona por encima del límite del AISI 321 (' + n(LIM_C, 0) + ' °C)' };
-  if (notas[id]) texto(o, notas[id], ml, 86, 11.5, IMPRESION.tenue);
-
-  // Campo, una celda por porción y sin interpolar
-  o.save(); o.translate(ml, mt);
-  var dx = pw / M, dy = ph / N;
-  for (j = 0; j < N; j++) for (i = 0; i < M; i++){
-    v = campo[j][i] * spec.esc + (spec.off || 0);
-    var c = fn((v - mn) / rango);
-    o.fillStyle = 'rgb(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ')';
-    // Medio píxel de solape para que no asomen costuras blancas entre celdas
-    o.fillRect(i * dx, (N - 1 - j) * dy, dx + 0.5, dy + 0.5);
-  }
-  if (spec.soldaduras) pintarSoldaduras(o, r, pw, ph);
-  if (spec.limite) contornoLimite(o, campo, pw, ph, IMPRESION.crit, 2);
-  o.strokeStyle = IMPRESION.eje; o.lineWidth = 1; o.strokeRect(0, 0, pw, ph);
-  o.restore();
-
-  // Ejes, en metros
-  o.strokeStyle = IMPRESION.eje; o.lineWidth = 1;
-  bonito(0, r.mapa.W, 5).forEach(function(xv){
-    var x = ml + xv * k;
-    o.beginPath(); o.moveTo(x, mt + ph); o.lineTo(x, mt + ph + 5); o.stroke();
-    texto(o, n(xv, 2), x, mt + ph + 19, 11.5, IMPRESION.tenue, 'center');
-  });
-  bonito(0, r.mapa.L, 5).forEach(function(yv){
-    var y = mt + ph - yv * k;
-    o.beginPath(); o.moveTo(ml, y); o.lineTo(ml - 5, y); o.stroke();
-    texto(o, n(yv, 2), ml - 9, y + 4, 11.5, IMPRESION.tenue, 'right');
-  });
-  texto(o, 'x, anchura [m]', ml + pw / 2, mt + ph + 44, 13, IMPRESION.tinta, 'center');
-  o.save(); o.translate(24, mt + ph / 2); o.rotate(-Math.PI / 2);
-  texto(o, 'y, altura [m]', 0, 0, 13, IMPRESION.tinta, 'center'); o.restore();
-
-  // Escala de color, vertical y del alto de la placa
-  var bx = ml + pw + 26, bw = 16;
-  var g = o.createLinearGradient(0, mt + ph, 0, mt);
-  for (i = 0; i <= 24; i++){
-    var cc = fn(i / 24);
-    g.addColorStop(i / 24, 'rgb(' + Math.round(cc[0]) + ',' + Math.round(cc[1]) + ',' + Math.round(cc[2]) + ')');
-  }
-  o.fillStyle = g; o.fillRect(bx, mt, bw, ph);
-  o.strokeStyle = IMPRESION.eje; o.strokeRect(bx, mt, bw, ph);
-  // Marcas cada 50 y, en negrita, el mínimo y el máximo exactos. Se omiten las
-  // marcas redondas que quedarían encima de ellos (a menos de 14 px).
-  var yDe = function(tv){ return mt + ph - (rango > 1e-9 ? (tv - mn) / rango : 0) * ph; };
-  for (var tv = Math.ceil(mn / 50) * 50; tv <= mx; tv += 50){
-    var y = yDe(tv);
-    if (Math.abs(y - yDe(mn)) < 14 || Math.abs(y - yDe(mx)) < 14) continue;
-    o.beginPath(); o.moveTo(bx + bw, y); o.lineTo(bx + bw + 5, y); o.stroke();
-    texto(o, n(tv, 0), bx + bw + 9, y + 4, 11.5, IMPRESION.tenue);
-  }
-  [[mx, 'máx'], [mn, 'mín']].forEach(function(e){
-    var y = yDe(e[0]);
-    o.strokeStyle = IMPRESION.tinta; o.lineWidth = 1.5;
-    o.beginPath(); o.moveTo(bx - 4, y); o.lineTo(bx + bw + 7, y); o.stroke();
-    texto(o, n(e[0], 0) + ' ' + e[1], bx + bw + 9, y + 4, 11.5, IMPRESION.tinta, 'left', 600);
-  });
-  o.lineWidth = 1;
-  texto(o, tit[1], bx, mt - 10, 12, IMPRESION.tinta);
-
-  guardarPng(L.cv, tit[2]);
-}
-
-function descargarGrafica(que){
-  var r = ultimo; if (!r) return;
-  var cfg = que === 'perfil' ? cfgPerfil(r, IMPRESION) : cfgColumna(r, sel.i, IMPRESION);
-  var titulo = que === 'perfil' ? 'Perfil de salida del aire en y = L'
-    : 'Recorrido de la columna ' + (sel.i + 1) + ' (x = ' + n(r.xCentros[sel.i], 3) + ' m)';
-  var nombre = que === 'perfil' ? 'perfil_salida_aire.png' : 'recorrido_columna_' + (sel.i + 1) + '.png';
-
-  var ancho = 900, alto = 560, ml = 78, mr = 28, mt = 124, mb = 64;
-  var ax = ancho - ml - mr, ay = alto - mt - mb;
-  var L = lienzoPng(ancho, alto), o = L.o;
-  texto(o, titulo, ml, 32, 20, IMPRESION.tinta, 'left', 600);
-  puntoDeTrabajo(r).forEach(function(t, q){ texto(o, t, ml, 54 + 16 * q, 11.5, IMPRESION.tenue); });
-
-  // Mismos límites que la gráfica de pantalla
-  var xs = [], ys = [];
-  cfg.series.forEach(function(s){ s.puntos.forEach(function(p){ xs.push(p[0]); ys.push(p[1]); }); });
-  var x0 = cfg.x0, x1 = cfg.x1;
-  var y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
-  var hueco = (y1 - y0) || 1; y0 -= hueco * 0.12; y1 += hueco * 0.16;
-  var X = function(v){ return ml + (v - x0) / ((x1 - x0) || 1) * ax; };
-  var Y = function(v){ return mt + ay - (v - y0) / ((y1 - y0) || 1) * ay; };
-  // La línea del límite solo se dibuja si cae dentro del rango, y la leyenda
-  // solo la anuncia entonces
-  var conRef = cfg.refY != null && cfg.refY > y0 && cfg.refY < y1;
-
-  // Leyenda
-  var lx = ml;
-  cfg.series.forEach(function(s){
-    o.strokeStyle = s.color; o.lineWidth = 2.5; o.setLineDash([]);
-    o.beginPath(); o.moveTo(lx, 98); o.lineTo(lx + 22, 98); o.stroke();
-    texto(o, s.leyenda, lx + 30, 102, 13, IMPRESION.tinta);
-    lx += 30 + o.measureText(s.leyenda).width + 28;
-  });
-  if (cfg.refLeyenda && conRef){
-    o.strokeStyle = IMPRESION.crit; o.lineWidth = 2; o.setLineDash([6, 4]);
-    o.beginPath(); o.moveTo(lx, 98); o.lineTo(lx + 22, 98); o.stroke(); o.setLineDash([]);
-    texto(o, cfg.refLeyenda, lx + 30, 102, 13, IMPRESION.tinta);
-  }
-
-
-  o.lineWidth = 1;
-  bonito(y0, y1, 6).forEach(function(v){
-    o.strokeStyle = IMPRESION.rejilla; o.beginPath(); o.moveTo(ml, Y(v)); o.lineTo(ml + ax, Y(v)); o.stroke();
-    texto(o, n(v, cfg.decY || 0), ml - 9, Y(v) + 4, 12, IMPRESION.tenue, 'right');
-  });
-  bonito(x0, x1, 6).forEach(function(v){
-    o.strokeStyle = IMPRESION.eje; o.beginPath(); o.moveTo(X(v), mt + ay); o.lineTo(X(v), mt + ay + 5); o.stroke();
-    texto(o, n(v, 2), X(v), mt + ay + 20, 12, IMPRESION.tenue, 'center');
-  });
-  o.strokeStyle = IMPRESION.eje;
-  o.beginPath(); o.moveTo(ml, mt); o.lineTo(ml, mt + ay); o.lineTo(ml + ax, mt + ay); o.stroke();
-  texto(o, cfg.ejeX, ml + ax / 2, alto - 16, 13, IMPRESION.tinta, 'center');
-  o.save(); o.translate(24, mt + ay / 2); o.rotate(-Math.PI / 2);
-  texto(o, cfg.ejeY, 0, 0, 13, IMPRESION.tinta, 'center'); o.restore();
-
-  if (conRef){
-    o.strokeStyle = IMPRESION.crit; o.lineWidth = 2; o.setLineDash([6, 4]);
-    o.beginPath(); o.moveTo(ml, Y(cfg.refY)); o.lineTo(ml + ax, Y(cfg.refY)); o.stroke();
-    o.setLineDash([]);
-  }
-  cfg.series.forEach(function(s){
-    o.strokeStyle = s.color; o.lineWidth = 2.5; o.lineJoin = 'round'; o.lineCap = 'round';
-    o.beginPath();
-    s.puntos.forEach(function(p, q){ if (q) o.lineTo(X(p[0]), Y(p[1])); else o.moveTo(X(p[0]), Y(p[1])); });
-    o.stroke();
-    if (s.puntos.length <= 40){
-      o.fillStyle = s.color;
-      s.puntos.forEach(function(p){ o.beginPath(); o.arc(X(p[0]), Y(p[1]), 3.2, 0, 2 * Math.PI); o.fill(); });
+/* Rampa de color del fluido: frio (azul) a caliente (rojo) */
+const RAMPA = [
+  [0.00, [22, 52, 104]], [0.28, [58, 122, 214]], [0.50, [255, 226, 186]],
+  [0.72, [255, 158, 107]], [1.00, [255, 84, 66]],
+];
+function color(t) {
+  t = clamp(t, 0, 1);
+  for (let i = 1; i < RAMPA.length; i++) {
+    if (t <= RAMPA[i][0]) {
+      const [t0, c0] = RAMPA[i - 1], [t1, c1] = RAMPA[i], u = (t - t0) / (t1 - t0);
+      return [lerp(c0[0], c1[0], u), lerp(c0[1], c1[1], u), lerp(c0[2], c1[2], u)];
     }
+  }
+  return RAMPA[RAMPA.length - 1][1];
+}
+const rgb = (c, k = 1, a = 1) =>
+  `rgba(${clamp(c[0] * k, 0, 255) | 0},${clamp(c[1] * k, 0, 255) | 0},${clamp(c[2] * k, 0, 255) | 0},${a})`;
+const hex = t => { const c = color(t); return '#' + c.map(v => (v | 0).toString(16).padStart(2, '0')).join(''); };
+
+/* Aparicion al hacer scroll + funcion 'visible' para pausar animaciones */
+const io = new IntersectionObserver(es => es.forEach(e => {
+  if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+}), { threshold: .12 });
+$$('.rv').forEach(n => io.observe(n));
+
+function alVer(nodo, fn, margen = '0px') {
+  const o = new IntersectionObserver(es => fn(es[0].isIntersecting), { rootMargin: margen });
+  o.observe(nodo);
+}
+
+/* Progreso de lectura */
+const barra = $('#progreso');
+addEventListener('scroll', () => {
+  const h = document.documentElement;
+  barra.style.transform = `scaleX(${clamp(scrollY / (h.scrollHeight - innerHeight), 0, 1)})`;
+}, { passive: true });
+
+/* ============================================================ brasas (fondo) */
+(() => {
+  const cv = $('#brasas'), cx = cv.getContext('2d');
+  let W, H, dpr, ps = [];
+  const nueva = (aleat) => ({
+    x: Math.random(), y: aleat ? Math.random() : 1.05,
+    v: .02 + Math.random() * .05, r: .6 + Math.random() * 1.8,
+    f: Math.random() * 6.28, a: .25 + Math.random() * .5, t: Math.random(),
   });
-
-  guardarPng(L.cv, nombre);
-}
-
-document.addEventListener('click', function(e){
-  var b = e.target.closest && e.target.closest('[data-descargar]'); if (!b) return;
-  var que = b.dataset.descargar;
-  if (TITULOS_MAPA[que]) descargarMapa(que); else descargarGrafica(que);
-});
-
-/* ---------------------------------------------------------- pintado ----- */
-function pintar(r){
-  var css = getComputedStyle(document.body);
-
-  $('k-qutil').textContent = n(r.q_util / 1e3, 1);
-  $('k-qinc').textContent = n(r.Q_incidente / 1e3, 1);
-  $('k-rend').textContent = n(r.rendimiento * 100, 1);
-  $('k-perd').textContent = n(r.perdidas / 1e3, 1);
-  $('k-tsal').textContent = n(r.T_media_salida - C, 0);
-  $('k-tsalmax').textContent = n(r.T_max_salida - C, 0);
-  $('k-tw').textContent = n(r.T_pared_max - C, 0);
-  $('k-dp').textContent = n(r.perdidaCarga / 1e3, 1);
-  $('k-dprel').textContent = n(r.perdidaCarga / (est.p * 1e5) * 100, 1);
-
-  $('kpi-pared').classList.toggle('alarma', r.limiteSuperado);
-  var pa = $('k-aisi');
-  pa.className = 'pastilla ' + (r.limiteSuperado ? 'no' : 'si');
-  pa.lastChild.textContent = r.limiteSuperado
-    ? 'supera ' + n(LIM_C, 0) + ' °C'
-    : 'bajo ' + n(LIM_C, 0) + ' °C';
-
-  $('d-qpico').textContent = n(r.q_pico / 1e3, 0);
-  $('d-qmedio').textContent = n(r.q_medio / 1e3, 0);
-  $('d-interc').textContent = n(r.interceptacion * 100, 1);
-  $('d-fpico').textContent = n(r.factorPico, 2);
-  $('d-u').textContent = n(r.u, 1);
-  $('d-re').textContent = nexp(r.Re);
-  $('d-h').textContent = n(r.h_int, 0);
-  $('d-malla').textContent = r.M + ' × ' + r.N;
-  $('d-celda').textContent = r.n.familia.replace('celda ', '');
-  $('d-sold').textContent = n(r.fracSoldadura * 100, 2);
-  $('d-dpf').textContent = n(r.dpFriccion / 1e3, 1);
-  $('d-dpd').textContent = n(r.dpDistribucion / 1e3, 1);
-  $('d-dpa').textContent = n(r.dpAceleracion / 1e3, 1);
-
-  MAPAS.forEach(function(spec){ pintarMapa(spec, r); });
-
-  var colores = { fluido: css.getPropertyValue('--fluido').trim(),
-                  pared: css.getPropertyValue('--pared').trim() };
-  grafica($('g-perfil'), cfgPerfil(r, colores));
-
-  // Recorrido de la columna seleccionada
-  var i = sel.i;
-  $('col-sel').textContent = String(i + 1);
-  $('col-x').textContent = 'x = ' + n(r.xCentros[i], 3) + ' m';
-  grafica($('g-columna'), cfgColumna(r, i, colores));
-
-  // Porción seleccionada
-  var j = sel.j;
-  var T_in = j === 0 ? r.T_ent : r.T_fluido[j - 1][i];
-  var perdN = r.flujo[j][i] * r.A_celda * est.alfa - r.q_nodo[j][i];
-  $('nodo-ij').textContent = 'columna ' + (i + 1) + ' de ' + r.T_fluido[0].length +
-                             ' · fila ' + (j + 1) + ' de ' + r.T_fluido.length;
-  $('n-pos').innerHTML = n(r.xCentros[i], 3) + ' , ' + n(r.yCentros[j], 3) + ' <span class="u">m</span>';
-  $('n-q').innerHTML = n(r.flujo[j][i] / 1e3, 1) + ' <span class="u">kW/m²</span>';
-  $('n-t').innerHTML = n(T_in - C, 1) + ' → ' + n(r.T_adiabatica[j][i] - C, 1) + ' <span class="u">°C</span>';
-  $('n-tm').innerHTML = n(r.T_fluido[j][i] - C, 1) + ' <span class="u">°C (λ = ' + n(r.lam, 2) + ')</span>';
-  $('n-tw').innerHTML = n(r.T_pared[j][i] - C, 1) + ' <span class="u">°C</span>' +
-    (r.T_pared[j][i] > RCP.LIMITE_AISI321
-      ? ' <span style="color:var(--crit)">↑ límite</span>' : '');
-  $('n-qf').innerHTML = n(r.q_nodo[j][i], 1) + ' <span class="u">W</span>';
-  $('n-qp').innerHTML = n(perdN, 1) + ' <span class="u">W</span>';
-}
-
-/* ---------------------------------------------------------- arranque ---- */
-pintarMandos();
-calcular();
-var redibujo;
-window.addEventListener('resize', function(){
-  clearTimeout(redibujo);
-  redibujo = setTimeout(function(){ if (ultimo) pintar(ultimo); }, 120);
-});
-var mq = window.matchMedia('(prefers-color-scheme: dark)');
-if (mq.addEventListener) mq.addEventListener('change', function(){ if (ultimo) pintar(ultimo); });
+  function tam() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    W = cv.width = innerWidth * dpr; H = cv.height = innerHeight * dpr;
+    ps = Array.from({ length: innerWidth < 700 ? 30 : 60 }, () => nueva(true));
+  }
+  tam(); addEventListener('resize', tam);
+  let t0 = performance.now();
+  function paso(t) {
+    const dt = Math.min((t - t0) / 1000, .05); t0 = t;
+    cx.clearRect(0, 0, W, H);
+    cx.globalCompositeOperation = 'lighter';
+    for (const p of ps) {
+      p.y -= p.v * dt; p.f += dt * 1.4;
+      if (p.y < -.05) Object.assign(p, nueva(false));
+      const x = (p.x + Math.sin(p.f) * .012) * W, y = p.y * H;
+      const c = color(.55 + .4 * p.t);
+      const g = cx.createRadialGradient(x, y, 0, x, y, p.r * 5 * dpr);
+      g.addColorStop(0, rgb(c, 1, p.a)); g.addColorStop(1, rgb(c, 1, 0));
+      cx.fillStyle = g; cx.beginPath(); cx.arc(x, y, p.r * 5 * dpr, 0, 6.29); cx.fill();
+    }
+    if (!REDUCIDO) requestAnimationFrame(paso);
+  }
+  requestAnimationFrame(paso);
 })();
 
-/* ===========================================================================
-   Campo de brasas del fondo
-   ---------------------------------------------------------------------------
-   Lienzo 2D, sin librerias, FIJO al viewport y no al documento: asi la memoria
-   es constante por larga que sea la pagina, en vez de crecer con ella. Las
-   brasas SUBEN, como el aire caliente que atraviesa la placa, y el cursor hace
-   de foco de calor: aparta las que tiene cerca y las lleva del naranja al
-   blanco.
+/* =============================================================== PLACA HERO
+   Modelo de juguete. Cada celda es un cojin. El fluido entra frio por abajo y
+   sube a V celdas/s; cada celda se calienta con el flujo de la mancha y pierde
+   un poco. Las columnas no se mezclan (lambda = 1, como en el modelo real).  */
+(() => {
+  const cv = $('#placa'), ctx = cv.getContext('2d'), inclina = $('#inclina');
+  const COLS = 8, FILAS = 13;
+  const V = 2.3, H = 0.30, PERD = 0.06;
+  const T = Array.from({ length: FILAS }, () => new Float32Array(COLS));
+  let W, Hh, dpr, cs, x0, y0;
+  const sol = { x: .5, y: .35, tx: .5, ty: .35 };
+  let ultimoToque = -1e9, incl = { x: 0, y: 0, tx: 0, ty: 0 }, activo = true, t = 0;
 
-   Los paneles de contenido son opacos a proposito, de modo que las brasas solo
-   asoman por los huecos entre tarjetas, los margenes y la portada. Sobre las
-   cifras nunca pasa nada.
-
-   Tres guardas impiden que el adorno se coma la herramienta:
-     1. Se detiene mientras se arrastra un deslizador, que es cuando el modelo
-        necesita los fotogramas para recalcular.
-     2. Se detiene con la pestana en segundo plano.
-     3. Respeta prefers-reduced-motion: pinta un fotograma y se queda quieto.
-   =========================================================================== */
-(function(){
-'use strict';
-
-var lienzo = document.getElementById('brasas');
-if (!lienzo || !lienzo.getContext) return;
-var ctx = lienzo.getContext('2d');
-if (!ctx) return;
-var menosMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)');
-
-var W = 0, H = 0, dpr = 1;
-var brasas = [];
-var raton = { x: 0, y: 0, activo: false };
-var pestanaVisible = true, arrastrando = false;
-var animacion = null;
-
-var ALCANCE = 135;      // radio de influencia del cursor [px]
-var EMPUJE  = 1100;     // intensidad del empujon
-
-// Densidad constante por area, no numero fijo: una brasa por cada 6500 px2,
-// con tope para no castigar pantallas grandes ni baterias pequenas.
-function cuantas(){
-  return Math.max(40, Math.min(260, Math.round(W * H / 6500)));
-}
-
-function nacer(dentro){
-  return {
-    x: Math.random() * W,
-    y: dentro ? Math.random() * H : H + Math.random() * 40,
-    r: 0.5 + Math.random() * 1.6,
-    vy: -(0.08 + Math.random() * 0.34),        // suben
-    deriva: (Math.random() - 0.5) * 0.10,
-    fase: Math.random() * 6.2832,
-    vaiven: 0.10 + Math.random() * 0.30,
-    alfa: 0.20 + Math.random() * 0.55,
-    calor: 0,                                  // 0 naranja brasa, 1 blanco
-    ex: 0, ey: 0                               // desvio que impone el cursor
-  };
-}
-
-function medir(){
-  W = Math.max(1, window.innerWidth);
-  H = Math.max(1, window.innerHeight);
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
-  lienzo.width  = Math.round(W * dpr);
-  lienzo.height = Math.round(H * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  var n = cuantas();
-  while (brasas.length < n) brasas.push(nacer(true));
-  brasas.length = n;
-}
-
-function pintar(){
-  ctx.clearRect(0, 0, W, H);
-  ctx.globalCompositeOperation = 'lighter';   // el solape hace el rescoldo
-  for (var i = 0; i < brasas.length; i++){
-    var b = brasas[i];
-    var g  = Math.round(150 + 95 * b.calor);
-    var az = Math.round(65 + 165 * b.calor);
-    var a  = b.alfa * (0.55 + 0.45 * b.calor);
-    ctx.fillStyle = 'rgba(255,' + g + ',' + az + ',' + a.toFixed(3) + ')';
-    ctx.beginPath();
-    ctx.arc(b.x + b.ex, b.y + b.ey, b.r * (1 + 0.5 * b.calor), 0, 6.2832);
-    ctx.fill();
+  function tam() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    const r = cv.getBoundingClientRect();
+    W = cv.width = Math.round(r.width * dpr); Hh = cv.height = Math.round(r.height * dpr);
+    cs = Math.min(W / (COLS + 1.6), Hh / (FILAS + 2.6));
+    x0 = (W - COLS * cs) / 2; y0 = (Hh - FILAS * cs) / 2;
   }
-  ctx.globalCompositeOperation = 'source-over';
-}
 
-function avanzar(){
-  for (var i = 0; i < brasas.length; i++){
-    var b = brasas[i];
-    b.y += b.vy;
-    b.fase += 0.01;
-    b.x += b.deriva + Math.sin(b.fase) * b.vaiven * 0.25;
+  function flujo(c, r) {
+    const dx = (c + .5) / COLS - sol.x, dy = (r + .5) / FILAS - sol.y;
+    return Math.exp(-(dx * dx / (2 * .17 * .17) + dy * dy / (2 * .15 * .15)));
+  }
 
-    var objetivo = 0;
-    if (raton.activo){
-      var dx = (b.x + b.ex) - raton.x;
-      var dy = (b.y + b.ey) - raton.y;
-      var d2 = dx * dx + dy * dy;
-      if (d2 < ALCANCE * ALCANCE){
-        var d = Math.sqrt(d2) || 0.001;
-        var cerca = 1 - d / ALCANCE;           // 0 en el borde, 1 encima
-        var f = EMPUJE * cerca * cerca / (d * 60);
-        b.ex += (dx / d) * f;
-        b.ey += (dy / d) * f;
-        objetivo = cerca;
+  function paso(dt) {
+    const a = clamp(V * dt, 0, .9);
+    for (let r = FILAS - 1; r >= 0; r--)
+      for (let c = 0; c < COLS; c++) {
+        const abajo = r === 0 ? 0 : T[r - 1][c];
+        let v = T[r][c];
+        v += (abajo - v) * a + (H * flujo(c, r) - PERD * v) * dt;
+        T[r][c] = clamp(v, 0, 1);
       }
+  }
+
+  function dibuja() {
+    ctx.clearRect(0, 0, W, Hh);
+    const px = (c) => x0 + c * cs, py = (r) => y0 + (FILAS - r) * cs; // borde inferior de la fila r
+
+    // bastidor de la placa
+    const m = cs * .55;
+    ctx.fillStyle = '#0b0e13';
+    ctx.strokeStyle = 'rgba(255,255,255,.16)'; ctx.lineWidth = 1.2 * dpr;
+    ctx.beginPath(); ctx.roundRect(x0 - m, y0 - m, COLS * cs + 2 * m, FILAS * cs + 2 * m, cs * .5); ctx.fill(); ctx.stroke();
+
+    // colectores de entrada y salida
+    let mediaSal = 0, maxSal = 0;
+    for (let c = 0; c < COLS; c++) { mediaSal += T[FILAS - 1][c] / COLS; maxSal = Math.max(maxSal, T[FILAS - 1][c]); }
+    const colector = (y, tt, txt, arriba) => {
+      const g = ctx.createLinearGradient(x0, 0, x0 + COLS * cs, 0);
+      g.addColorStop(0, rgb(color(tt), .8)); g.addColorStop(1, rgb(color(tt), 1));
+      ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(x0 - m * .4, y, COLS * cs + m * .8, cs * .3, cs * .15); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.font = `${11 * dpr}px Inter,sans-serif`; ctx.textAlign = 'left';
+      ctx.fillText(txt, x0 - m * .4, arriba ? y - 8 * dpr : y + cs * .3 + 15 * dpr);
+    };
+    colector(y0 - m - cs * .05 - cs * .3, mediaSal, 'SALIDA', true);
+    colector(y0 + FILAS * cs + m + cs * .05, 0, 'ENTRADA', false);
+
+    // cojines
+    for (let r = 0; r < FILAS; r++)
+      for (let c = 0; c < COLS; c++) {
+        const tt = T[r][c], col = color(tt);
+        const cx0 = px(c) + cs / 2, cy0 = py(r) + cs / 2;
+        const onda = Math.sin(t * 2 + c * .7 + r * .5) * .012;
+        const ins = cs * (.15 - .05 * tt + onda);
+        const w = cs - 2 * ins, rad = cs * .34;
+        const g = ctx.createRadialGradient(cx0 - cs * .16, cy0 - cs * .2, cs * .04, cx0, cy0, cs * .75);
+        g.addColorStop(0, rgb(col, 1.45)); g.addColorStop(.55, rgb(col, 1)); g.addColorStop(1, rgb(col, .42));
+        ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(cx0 - w / 2, cy0 - w / 2, w, w, rad); ctx.fill();
+        // brillo especular
+        ctx.fillStyle = 'rgba(255,255,255,.2)';
+        ctx.beginPath(); ctx.ellipse(cx0 - w * .16, cy0 - w * .25, w * .2, w * .09, -.5, 0, 6.29); ctx.fill();
+      }
+
+    // soldaduras: en las esquinas de cada cojin
+    for (let r = 0; r <= FILAS; r++)
+      for (let c = 0; c <= COLS; c++) {
+        const x = px(c), y = py(r) + (r === FILAS ? 0 : 0) ;
+        ctx.fillStyle = '#04060a'; ctx.beginPath(); ctx.arc(x, y, cs * .105, 0, 6.29); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1.2 * dpr; ctx.stroke();
+      }
+
+    // pulsos de fluido subiendo por el eje de cada columna
+    ctx.lineCap = 'round';
+    for (let c = 0; c < COLS; c++)
+      for (let k = 0; k < 3; k++) {
+        const ph = (t * .42 + k / 3 + c * .137) % 1;
+        const y = y0 + FILAS * cs * (1 - ph), x = px(c) + cs / 2;
+        const al = Math.sin(ph * Math.PI) * .55;
+        ctx.strokeStyle = `rgba(255,255,255,${al})`; ctx.lineWidth = 2.2 * dpr;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - cs * .32); ctx.stroke();
+      }
+
+    // mancha solar: resplandor + rayos giratorios
+    const sx = x0 + sol.x * COLS * cs, sy = y0 + (1 - sol.y) * FILAS * cs;
+    ctx.globalCompositeOperation = 'lighter';
+    const rg = cs * 3.4;
+    const gl = ctx.createRadialGradient(sx, sy, 0, sx, sy, rg);
+    gl.addColorStop(0, 'rgba(255,225,170,.55)'); gl.addColorStop(.35, 'rgba(255,150,90,.2)'); gl.addColorStop(1, 'rgba(255,120,60,0)');
+    ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(sx, sy, rg, 0, 6.29); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,220,170,.22)'; ctx.lineWidth = 1.4 * dpr;
+    for (let i = 0; i < 14; i++) {
+      const an = t * .35 + i * (6.283 / 14), l1 = cs * .8, l2 = cs * (1.6 + .5 * Math.sin(t * 1.6 + i * 2.1));
+      ctx.beginPath(); ctx.moveTo(sx + Math.cos(an) * l1, sy + Math.sin(an) * l1);
+      ctx.lineTo(sx + Math.cos(an) * l2, sy + Math.sin(an) * l2); ctx.stroke();
     }
-    b.calor += (objetivo - b.calor) * 0.08;    // calienta y enfria con inercia
-    b.ex *= 0.94;                              // y vuelve a su sitio
-    b.ey *= 0.94;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1.5 * dpr;
+    ctx.beginPath(); ctx.arc(sx, sy, cs * .34, 0, 6.29); ctx.stroke();
+    ctx.beginPath(); ctx.arc(sx, sy, cs * .1, 0, 6.29); ctx.fillStyle = '#fff'; ctx.fill();
 
-    if (b.y < -10 || b.x < -30 || b.x > W + 30) brasas[i] = nacer(false);
+    return maxSal;
   }
-  pintar();
-}
 
-function puedeCorrer(){
-  return pestanaVisible && !arrastrando && !menosMovimiento.matches;
-}
-function marco(){
-  if (!puedeCorrer()){ animacion = null; return; }
-  avanzar();
-  animacion = requestAnimationFrame(marco);
-}
-function arrancar(){
-  if (animacion === null && puedeCorrer()) animacion = requestAnimationFrame(marco);
-}
-function parar(){
-  if (animacion !== null){ cancelAnimationFrame(animacion); animacion = null; }
-}
-
-// -- El cursor -------------------------------------------------------------
-// El lienzo esta fijo al viewport, asi que clientX/clientY ya son sus propias
-// coordenadas: no hay que restar la posicion de ningun contenedor.
-window.addEventListener('pointermove', function(e){
-  raton.x = e.clientX;
-  raton.y = e.clientY;
-  raton.activo = true;
-  arrancar();
-}, { passive: true });
-document.addEventListener('pointerleave', function(){ raton.activo = false; }, { passive: true });
-
-// -- Guarda 1: el modelo tiene prioridad mientras se arrastra --------------
-document.addEventListener('pointerdown', function(e){
-  if (e.target.closest && e.target.closest('input[type=range]')){
-    arrastrando = true; parar();
+  let fps = 0, hudT = 0;
+  function bucle(now) {
+    if (!activo) return;
+    const dt = Math.min((now - (bucle.p || now)) / 1000, .05); bucle.p = now; t += dt;
+    // sin puntero, el sol dibuja una figura de Lissajous
+    if (now - ultimoToque > 2500) {
+      sol.tx = .5 + .32 * Math.sin(t * .45); sol.ty = .5 + .3 * Math.sin(t * .31 + 1);
+    }
+    sol.x = lerp(sol.x, sol.tx, 1 - Math.exp(-dt * 6)); sol.y = lerp(sol.y, sol.ty, 1 - Math.exp(-dt * 6));
+    const n = 2; for (let i = 0; i < n; i++) paso(dt / n);
+    const mx = dibuja();
+    incl.x = lerp(incl.x, incl.tx, 1 - Math.exp(-dt * 5)); incl.y = lerp(incl.y, incl.ty, 1 - Math.exp(-dt * 5));
+    inclina.style.transform = `rotateY(${incl.x}deg) rotateX(${incl.y}deg)`;
+    if ((hudT += dt) > .15) { hudT = 0; $('#hud-sal').textContent = Math.round(290 + 275 * mx) + ' °C'; }
+    if (!REDUCIDO) requestAnimationFrame(bucle);
   }
-}, { passive: true });
-['pointerup','pointercancel'].forEach(function(ev){
-  window.addEventListener(ev, function(){
-    if (arrastrando){ arrastrando = false; arrancar(); }
-  }, { passive: true });
-});
 
-// -- Guarda 2: pestana en segundo plano ------------------------------------
-document.addEventListener('visibilitychange', function(){
-  pestanaVisible = !document.hidden;
-  if (pestanaVisible) arrancar(); else parar();
-});
+  function mover(e) {
+    const r = cv.getBoundingClientRect();
+    const u = (e.clientX - r.left) / r.width, v = (e.clientY - r.top) / r.height;
+    sol.tx = clamp((u * W - x0) / (COLS * cs), .02, .98);
+    sol.ty = clamp(1 - (v * Hh - y0) / (FILAS * cs), .02, .98);
+    ultimoToque = performance.now();
+    incl.x = incl.tx = (u - .5) * 16; incl.y = incl.ty = -(v - .5) * 12;
+    $('#pista').style.opacity = 0;
+  }
+  cv.addEventListener('pointermove', mover);
+  cv.addEventListener('pointerdown', mover);
+  cv.addEventListener('pointerleave', () => { incl.tx = incl.ty = 0; });
 
-// -- Guarda 3: quien pide menos movimiento, no lo tiene --------------------
-function atenderPreferencia(){
-  if (menosMovimiento.matches){ parar(); medir(); pintar(); }
-  else arrancar();
-}
-if (menosMovimiento.addEventListener) menosMovimiento.addEventListener('change', atenderPreferencia);
-
-// Redimensionar el lienzo lo borra, asi que se repinta SIEMPRE tras medir: si
-// rAF esta estrangulado no habria fotograma que lo restaurara.
-var remedir;
-window.addEventListener('resize', function(){
-  clearTimeout(remedir);
-  remedir = setTimeout(function(){ medir(); pintar(); }, 150);
-});
-
-medir();
-pintar();          // un fotograma ya visible antes de animar nada
-atenderPreferencia();
+  tam(); addEventListener('resize', tam);
+  if (REDUCIDO) { for (let i = 0; i < 600; i++) paso(1 / 60); dibuja(); }
+  else {
+    for (let i = 0; i < 240; i++) paso(1 / 60); // arranca ya en regimen
+    requestAnimationFrame(bucle);
+    alVer(cv, v => { activo = v; if (v) { bucle.p = 0; requestAnimationFrame(bucle); } });
+  }
 })();
+
+/* ===================================================== CORTE DEL PILLOW PLATE */
+(() => {
+  const svg = $('#svg-corte'), Y0 = 190, A = 70, X0 = 90, PASO = 180, N = 4;
+  const soldX = Array.from({ length: N + 1 }, (_, i) => X0 + i * PASO);
+  let p = 0, t = 0, activo = false;
+
+  // Semi-espesor del canal en x, para presion p
+  const h = (x, pp) => {
+    const i = clamp(Math.floor((x - X0) / PASO), 0, N - 1);
+    const u = (x - soldX[i]) / PASO;
+    return pp * A * Math.pow(Math.sin(Math.PI * u), .55) * (1 + .06 * Math.sin(u * 9));
+  };
+  const linea = (signo, pp) => {
+    let d = '';
+    for (let x = X0; x <= X0 + N * PASO; x += 4) d += (d ? 'L' : 'M') + x + ',' + (Y0 + signo * (h(x, pp) + 2.5)).toFixed(1);
+    return d;
+  };
+
+  // rotulos y soldaduras (fijos)
+  const sold = $('#soldaduras'), rot = $('#rotulos');
+  soldX.forEach(x => {
+    el('rect', { x: x - 6, y: Y0 - 8, width: 12, height: 16, rx: 5, fill: '#FF9E6B' }, sold);
+    el('circle', { cx: x, cy: Y0, r: 14, fill: 'none', stroke: '#FF9E6B', 'stroke-width': 1.3, class: 'pulso' }, sold);
+  });
+  const txt = (x, y, s, ancla = 'middle') => { const e = el('text', { x, y, 'text-anchor': ancla }, rot); e.textContent = s; return e; };
+  txt(soldX[1], Y0 + 118, 'soldadura por puntos');
+  el('path', { d: `M${soldX[1]},${Y0 + 104}V${Y0 + 16}`, stroke: '#ffffff55', 'stroke-dasharray': '3 4', fill: 'none' }, rot);
+  txt(X0 + PASO * 2.5, Y0 + 118, 'canal inflado: aquí circula la sal');
+  txt(X0 + PASO * 2.5, 28, 'cara expuesta: recibe el flujo solar');
+  txt(X0 - 4, Y0 - 90, 'sal fría', 'start').setAttribute('fill', '#7FB4FF');
+  txt(X0 + N * PASO + 4, Y0 - 90, 'sal caliente', 'end').setAttribute('fill', '#FF9E6B');
+
+  // flechas del flujo solar
+  const rayos = $('#rayos-corte');
+  for (let i = 0; i < 9; i++) {
+    const x = X0 + 40 + i * ((N * PASO - 80) / 8);
+    const g = el('g', { class: 'flujo-solar', style: `animation-delay:${(i % 3) * .5 - 2}s` }, rayos);
+    el('line', { x1: x, y1: 44, x2: x, y2: 74, stroke: '#FF9E6B', 'stroke-width': 2.4, 'stroke-linecap': 'round', 'marker-end': 'url(#pta)' }, g);
+  }
+
+  // particulas de sal dentro del canal
+  const pts = $('#pts-sal'), parts = [];
+  for (let i = 0; i < 70; i++) parts.push({ c: el('circle', { r: 2.6, fill: '#fff', opacity: .7 }, pts), u: Math.random(), y: (Math.random() - .5) * 2, v: .05 + Math.random() * .06 });
+
+  function pinta() {
+    $('#ch-sup').setAttribute('d', linea(-1, p));
+    $('#ch-inf').setAttribute('d', linea(1, p));
+    let d = '';
+    for (let x = X0; x <= X0 + N * PASO; x += 4) d += (d ? 'L' : 'M') + x + ',' + (Y0 - h(x, p)).toFixed(1);
+    for (let x = X0 + N * PASO; x >= X0; x -= 4) d += 'L' + x + ',' + (Y0 + h(x, p)).toFixed(1);
+    d += 'Z';
+    $('#fl-sal').setAttribute('d', d); $('#cp-sal').setAttribute('d', d);
+    $('#fl-sal').setAttribute('opacity', (.55 * p).toFixed(2));
+    $('#presion').value = Math.round(p * 100); $('#presion-v').textContent = Math.round(p * 100) + ' %';
+    sold.style.opacity = 1;
+  }
+  function bucle(now) {
+    if (!activo) return;
+    const dt = Math.min((now - (bucle.p || now)) / 1000, .05); bucle.p = now; t += dt;
+    for (const q of parts) {
+      q.u = (q.u + q.v * dt) % 1;
+      const x = X0 + q.u * N * PASO;
+      q.c.setAttribute('cx', x.toFixed(1));
+      q.c.setAttribute('cy', (Y0 + q.y * h(x, p) * .8).toFixed(1));
+      q.c.setAttribute('opacity', (p > .15 ? .75 : 0));
+    }
+    requestAnimationFrame(bucle);
+  }
+  let anim = 0;
+  function infla() {
+    cancelAnimationFrame(anim); p = 0; pinta();
+    const ini = performance.now();
+    (function f(n) {
+      const u = clamp((n - ini - 400) / 2600, 0, 1);
+      p = 1 - Math.pow(1 - u, 3); pinta();
+      if (u < 1) anim = requestAnimationFrame(f);
+    })(ini);
+  }
+  $('#presion').addEventListener('input', e => { cancelAnimationFrame(anim); p = e.target.value / 100; pinta(); });
+  $('#reinflar').addEventListener('click', infla);
+  pinta();
+  let hecho = false;
+  alVer(svg, v => {
+    activo = v; if (v) { bucle.p = 0; requestAnimationFrame(bucle); if (!hecho) { hecho = true; REDUCIDO ? (p = 1, pinta()) : infla(); } }
+  }, '-15% 0px');
+})();
+
+/* ================================================================== OCTOGONO */
+(() => {
+  const cx = 450, cy = 250, R = 135;
+  const gPl = $('#placas-oct'), gH = $('#haces'), gC = $('#campo'), gE = $('#etq-oct'), lista = $('#lista-placas');
+  const info = $('#info-placa');
+  const punto = (ang, r = R) => [cx + r * Math.cos(ang * Math.PI / 180), cy + r * Math.sin(ang * Math.PI / 180)];
+
+  const notas = [
+    ['Placa 1', 'Entrada de la sal fría, junto al plano de simetría y frente al campo: la que más flujo recibe.'],
+    ['Placa 2', 'La sal ya viene precalentada; el flujo baja al alejarnos del pico.'],
+    ['Placa 3', 'Lateral del octógono: recibe poco flujo, pero la sal ya está caliente.'],
+    ['Placa 4', 'Salida, en la cara opuesta al campo. Aquí la sal alcanza la temperatura de diseño y el colector la mezcla.'],
+  ];
+  const frac = [.16, .38, .62, .86]; // temperatura relativa ilustrativa de cada placa
+
+  // placa i (0..3), lado +1 (derecha) o -1 (izquierda)
+  const plazas = [];
+  for (const lado of [1, -1])
+    for (let i = 0; i < 4; i++) {
+      const a0 = lado === 1 ? 90 - 45 * i : 90 + 45 * i, a1 = lado === 1 ? 90 - 45 * (i + 1) : 90 + 45 * (i + 1);
+      const [xa, ya] = punto(a0), [xb, yb] = punto(a1);
+      const d = `M${xa.toFixed(1)},${ya.toFixed(1)}L${xb.toFixed(1)},${yb.toFixed(1)}`;
+      const g = el('g', { style: 'cursor:pointer' }, gPl);
+      el('path', { d, stroke: hex(frac[i]), 'stroke-width': 30, 'stroke-linecap': 'butt', fill: 'none', class: 'cuerpo' }, g);
+      el('path', { d, stroke: '#04060a', 'stroke-width': 4, 'stroke-dasharray': '0 11', 'stroke-linecap': 'round', fill: 'none', opacity: .9 }, g);
+      el('path', { d, stroke: '#ffffffcc', 'stroke-width': 2, class: 'corre', fill: 'none', style: `animation-delay:${-i * .35}s;${(lado === 1) === (a0 > a1) ? '' : ''}` }, g);
+      el('path', { d, stroke: '#fff', 'stroke-width': 30, fill: 'none', opacity: 0, class: 'halo' }, g);
+      plazas.push({ g, i, lado });
+      g.addEventListener('pointerenter', () => marca(i));
+      g.addEventListener('pointerdown', () => marca(i));
+    }
+  // etiquetas de entrada/salida
+  const e1 = el('text', { x: cx, y: cy + R + 26, 'text-anchor': 'middle', fill: '#7FB4FF' }, gE); e1.textContent = '↑ entra la sal fría';
+  const e2 = el('text', { x: cx, y: cy - R - 30, 'text-anchor': 'middle', fill: '#FF9E6B' }, gE); e2.textContent = 'sale la sal caliente ↑';
+
+  // campo de heliostatos al sur: arcos concentricos de espejos
+  const espejos = [];
+  for (let fila = 0; fila < 4; fila++) {
+    const n = 11 + fila * 2;
+    for (let k = 0; k < n; k++) {
+      const dx = (k - (n - 1) / 2) * 42, x = cx + dx, y = 436 + fila * 27 + dx * dx * .0011;
+      const g = el('g', { transform: `translate(${x.toFixed(0)},${y.toFixed(0)}) rotate(${(Math.atan2(cy + R - y, cx - x) * 180 / Math.PI + 90).toFixed(0)})` }, gC);
+      el('rect', { x: -8, y: -3, width: 16, height: 6, rx: 1.5, fill: '#cfd6e2', opacity: .9 - fila * .12 }, g);
+      el('rect', { x: -8, y: -3, width: 16, height: 2, rx: 1, fill: '#ffffff', opacity: .5 }, g);
+      espejos.push([x, y]);
+    }
+  }
+  // haces hacia la placa 1 (zona del vertice inferior)
+  espejos.forEach(([x, y], i) => {
+    if (i % 2) return;
+    el('line', { x1: x, y1: y, x2: cx + (x - cx) * .05, y2: cy + R - 2, stroke: '#FFD9A0', 'stroke-width': 1.3, class: 'haz', opacity: .55, style: `animation-delay:${-(i % 7) * .17}s` }, gH);
+  });
+  const sol = el('circle', { cx: cx + 0, cy: cy + R + 4, r: 6, fill: '#FFD9A0', class: 'pulso' }, gH);
+
+  // lista
+  notas.forEach(([nombre, txt], i) => {
+    const li = document.createElement('li'); li.style.setProperty('--c', hex(frac[i]));
+    li.innerHTML = `<span class="pt"></span><span><b>${nombre}</b>${txt}</span>`;
+    li.addEventListener('pointerenter', () => marca(i));
+    lista.appendChild(li);
+  });
+
+  function marca(i) {
+    plazas.forEach(p => p.g.querySelector('.halo').setAttribute('opacity', p.i === i ? .22 : 0));
+    $$('li', lista).forEach((li, k) => li.classList.toggle('on', k === i));
+    info.textContent = `${notas[i][0]} de 4 en cada mitad, temperatura relativa de la sal ≈ ${Math.round(frac[i] * 100)} % del salto total (ilustrativo).`;
+  }
+  marca(0);
+})();
+
+/* ==================================================================== CIFRAS */
+(() => {
+  const nodos = $$('.cifra .num');
+  const o = new IntersectionObserver(es => es.forEach(e => {
+    if (!e.isIntersecting) return; o.unobserve(e.target);
+    const n = e.target, fin = parseFloat(n.dataset.n), d = +(n.dataset.d || 0), ini = parseFloat(n.dataset.ini || 0);
+    const u = n.querySelector('.u'), unidad = u ? u.outerHTML : '';
+    const t0 = performance.now(), dur = REDUCIDO ? 1 : 1700;
+    (function f(now) {
+      const k = clamp((now - t0) / dur, 0, 1), s = 1 - Math.pow(1 - k, 4);
+      n.innerHTML = lerp(ini, fin, s).toFixed(d).replace('.', ',') + unidad;
+      if (k < 1) requestAnimationFrame(f);
+    })(t0);
+  }), { threshold: .6 });
+  nodos.forEach(n => o.observe(n));
+})();
+
+/* ===================================================== TARJETAS DE MODELOS */
+$$('.modelo').forEach(c => {
+  c.addEventListener('pointermove', e => {
+    const r = c.getBoundingClientRect(), u = (e.clientX - r.left) / r.width, v = (e.clientY - r.top) / r.height;
+    c.style.setProperty('--ry', ((u - .5) * 7).toFixed(2) + 'deg');
+    c.style.setProperty('--rx', (-(v - .5) * 7).toFixed(2) + 'deg');
+    c.style.setProperty('--mx', (u * 100) + '%'); c.style.setProperty('--my', (v * 100) + '%');
+  });
+  c.addEventListener('pointerleave', () => { c.style.setProperty('--rx', '0deg'); c.style.setProperty('--ry', '0deg'); });
+});
+
+/* Vistas en miniatura: mapa de calor animado, sin fisica */
+$$('canvas.mini').forEach(cv => {
+  const ctx = cv.getContext('2d'), modo = cv.dataset.modo;
+  let W, H, dpr, activo = false, t = 0;
+  const tam = () => {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    const r = cv.parentElement.getBoundingClientRect();
+    cv.style.width = '100%'; cv.style.height = '100%';
+    W = cv.width = r.width * dpr; H = cv.height = r.height * dpr;
+  };
+  tam(); addEventListener('resize', tam);
+  function dibuja() {
+    ctx.fillStyle = '#05070b'; ctx.fillRect(0, 0, W, H);
+    // sal: 4 placas en serie (bloques con calor creciente); aire: una placa con un pico
+    const cols = modo === 'sal' ? 32 : 26, filas = modo === 'sal' ? 9 : 9;
+    const cw = W / cols, ch = H / filas;
+    for (let f = 0; f < filas; f++)
+      for (let c = 0; c < cols; c++) {
+        let tt;
+        if (modo === 'sal') {
+          const placa = Math.floor(c / (cols / 4)), lo = c / cols;
+          const flujo = Math.exp(-Math.pow((c % (cols / 4)) / (cols / 4) + placa - 0.2, 2) / 2.2) * Math.exp(-Math.pow((f - 4 - 1.5 * Math.sin(t * .5)) / 3, 2));
+          tt = clamp(.1 + lo * .75 + .18 * flujo * Math.sin(t + c * .2 + f * .4) + .12 * flujo, 0, 1);
+        } else {
+          const dx = (c - cols / 2 - 5 * Math.sin(t * .6)) / 5, dy = (f - filas / 2 - 1.5 * Math.cos(t * .5)) / 2.6;
+          const fl = Math.exp(-(dx * dx + dy * dy) / 2);
+          tt = clamp(.12 + (filas - f) / filas * .0 + .85 * fl * (.6 + .4 * (1 - f / filas)) + .08 * Math.sin(t * 2 + f), 0, 1);
+        }
+        ctx.fillStyle = rgb(color(tt), .95);
+        ctx.beginPath(); ctx.roundRect(c * cw + cw * .1, f * ch + ch * .1, cw * .8, ch * .8, Math.min(cw, ch) * .3); ctx.fill();
+      }
+    if (modo === 'sal') { // colectores entre placas
+      ctx.fillStyle = '#05070b';
+      for (let k = 1; k < 4; k++) ctx.fillRect(k * W / 4 - 1.5 * dpr, 0, 3 * dpr, H);
+    }
+  }
+  function bucle(now) {
+    if (!activo) return;
+    const dt = Math.min((now - (bucle.p || now)) / 1000, .05); bucle.p = now; t += dt;
+    dibuja(); if (!REDUCIDO) requestAnimationFrame(bucle);
+  }
+  dibuja();
+  alVer(cv, v => { activo = v; if (v) { bucle.p = 0; requestAnimationFrame(bucle); } });
+});
 </script>
 </body>
 </html>

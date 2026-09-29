@@ -6,10 +6,15 @@ calor.
 
 ## Páginas interactivas
 
-Las dos corren el modelo en el navegador, sin servidor ni instalar nada.
+Todas corren en el navegador, sin servidor ni instalar nada.
 
-- **https://pablogcguc3m.github.io/receptor_solar_PPHE/** — la placa con aire
-  (`receptor.py`), para demostraciones: el mapa de flujo incidente, la
+- **https://pablogcguc3m.github.io/receptor_solar_PPHE/** — la portada:
+  animaciones ilustrativas de un receptor de pillow plates (la placa que se
+  calienta bajo una mancha que sigue al puntero, el corte de un pillow plate
+  inflándose y la planta del octógono con el campo de helióstatos). No calcula
+  nada: enlaza las dos páginas siguientes.
+- **https://pablogcguc3m.github.io/receptor_solar_PPHE/aire/** — la placa con
+  aire (`receptor.py`), para demostraciones: el mapa de flujo incidente, la
   temperatura del aire y la de la pared, el perfil de salida en `y = L` y el
   recorrido de cada columna.
 - **https://pablogcguc3m.github.io/receptor_solar_PPHE/octogonal/** — el caso
@@ -58,7 +63,8 @@ Las dos corren el modelo en el navegador, sin servidor ni instalar nada.
 
 ### `web/` — la página
 
-HTML, CSS y JavaScript sin dependencias. `fisica.js` es una traducción del
+HTML, CSS y JavaScript sin dependencias. `index.html` es la portada,
+`aire/` y `octogonal/` las dos páginas de modelo. `aire/fisica.js` es una traducción del
 núcleo de cálculo de `receptor.py` y `octogonal/fisica_octogonal.js`, la de
 `receptor_octogonal.py`; las dos validadas nodo a nodo contra el original. Se
 publica sola al empujar cambios a `main`.

@@ -46,7 +46,7 @@ jobs:
       # pide el fisica.js de su propia version. En local se sigue abriendo tal
       # cual, sin el parametro.
       - name: Versionar fisica.js
-        run: sed -i "s|src=\"fisica.js\"|src=\"fisica.js?v=${GITHUB_SHA::7}\"|" web/index.html && grep -q "fisica.js?v=" web/index.html
+        run: sed -i "s|src=\"fisica.js\"|src=\"fisica.js?v=${GITHUB_SHA::7}\"|" web/aire/index.html && grep -q "fisica.js?v=" web/aire/index.html
 
       # Lo mismo para la pagina del receptor octogonal y su nucleo de calculo
       - name: Versionar fisica_octogonal.js
