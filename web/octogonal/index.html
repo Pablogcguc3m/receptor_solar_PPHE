@@ -294,6 +294,7 @@ input[type=range]:active::-webkit-slider-thumb{transform:scale(1.25)}
   padding:6px 11px; cursor:pointer; transition:background-color .15s, color .15s, border-color .15s;
 }
 .descargar:hover{color:var(--ink); border-color:rgba(255,255,255,.55); background:rgba(255,255,255,.06)}
+.exportar{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px}
 .leyenda span{display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink-2)}
 .leyenda i{width:15px; height:2px; border-radius:1px; display:inline-block}
 .grafica{position:relative}
@@ -666,6 +667,17 @@ img{max-width:100%}
             <tfoot id="t-total"></tfoot>
           </table>
         </div>
+      </section>
+
+      <section class="tarjeta bloque">
+        <div class="tarjeta-cab"><h3>Exportar la tabla de resultados</h3>
+          <span class="sub">con los parámetros que hay ahora en pantalla</span></div>
+        <div class="exportar">
+          <button class="descargar" data-tabla="pdf" title="Tabla de resultados en PDF">PDF ↓</button>
+          <button class="descargar" data-tabla="png" title="Tabla de resultados en PNG">PNG ↓</button>
+          <button class="descargar" data-tabla="tex" title="Código LaTeX de la tabla, para compilar con pdflatex">LaTeX (.tex) ↓</button>
+        </div>
+        <p class="sub" style="margin-top:10px">El PDF y el PNG imitan la tabla LaTeX del informe, dibujada desde los datos. El <code>.tex</code> es la tabla real (<code>standalone</code>): compílalo con <code>pdflatex</code> para el PDF vectorial con la tipografía exacta.</p>
       </section>
 
       <section class="abajo">
@@ -1398,6 +1410,251 @@ document.addEventListener('click', function(e){
   var b = e.target.closest && e.target.closest('[data-descargar]'); if (!b) return;
   var que = b.dataset.descargar;
   if (TITULOS_MAPA[que]) descargarMapa(que); else descargarGrafica(que);
+});
+
+/* ------------------------------------------------ tabla de resultados ----- */
+// Una sola lista de filas alimenta las tres salidas: el .tex (que se compila con
+// pdflatex, el mismo formato de la tabla del informe), y el PDF y el PNG, que se
+// dibujan en canvas imitando esa tabla porque el navegador no compila LaTeX.
+function nc(v, d){ return n(v, d).replace(/(,\d*?)0+$/, '$1').replace(/,$/, ''); }
+function nm(v, d){ return nc(v, d).replace(',', '{,}'); }
+function filasTabla(r){
+  var placas = r.placas, ult = placas[placas.length - 1];
+  var disp = Math.max.apply(null, ult.perfilSalida) - Math.min.apply(null, ult.perfilSalida);
+  var fam = r.n.familia, np = r.nPlacas;
+  var R = [];
+  function h(t){ R.push({ cab: t }); }
+  function f(l, u, v){ R.push({ l: l, u: u, v: v }); }
+  h('Geometría del receptor');
+  f('Placas del octógono (se resuelven ' + np + ' por simetría)', '--', String(2 * np));
+  f('Altura $\\times$ anchura de cada placa', 'm', n(r.L, 1) + ' × ' + n(r.w, 3));
+  f('Diámetro del octógono (' + (est.circ ? 'circunscrito' : 'inscrito') + ')', 'm', n(est.D, 1));
+  f('Área expuesta total', 'm$^2$', n(2 * np * r.L * r.w, 1));
+  h('Geometría del pillow plate (' + fam + ')');
+  f('Espesor de chapa, $\\delta_{pp}$', 'mm', nc(est.delta_pp, 2));
+  f('Expansión interna, $b_i$', 'mm', nc(est.b_i, 2));
+  f('Paso transversal entre soldaduras, $s_T$', 'mm', nc(est.s_t, 1));
+  f('Paso longitudinal entre soldaduras, $2s_L$', 'mm', nc(2 * est.s_l, 1));
+  f('Diámetro del punto de soldadura, $d_{sp}$', 'mm', nc(est.d_sp, 2));
+  f('Diámetro equivalente del canal, $d_e = \\sqrt{2}\\,b_i$', 'mm', n(r.de * 1e3, 2));
+  f('Sección de paso por placa, $f_{ch} = b_i w / \\sqrt{2}$', 'cm$^2$', n(r.seccion * 1e4, 1));
+  f('Fracción de área ocupada por soldaduras', '\\%', n(r.fracSoldadura * 100, 2));
+  f('Malla por placa (una porción por celda)', '--', r.M + ' × ' + r.N);
+  h('Balance térmico');
+  f('Calor incidente', 'MW', n(2 * r.Q_inc / 1e6, 2));
+  f('Calor absorbido por la sal', 'MW', n(2 * r.Q_util / 1e6, 2));
+  f('Rendimiento térmico', '\\%', n(r.rendimiento * 100, 2));
+  f('Pérdidas por radiación', 'MW', n(2 * r.Q_rad / 1e6, 2));
+  f('Pérdidas por convección exterior', 'MW', n(2 * r.Q_conv / 1e6, 2));
+  f('Gasto másico', 'kg/s', n(2 * r.G, 1));
+  h('Canal interno (entrada / salida)');
+  f('Velocidad', 'm/s', n(r.entrada.u, 1) + ' / ' + n(r.salida.u, 1));
+  f('Número de Reynolds', '$10^3$', n(r.validez.Re[0] / 1e3, 1) + ' / ' + n(r.validez.Re[1] / 1e3, 1));
+  f('Coef. de convección interno', 'kW/(m$^2$\\,K)', n(r.entrada.h / 1e3, 1) + ' / ' + n(r.salida.h / 1e3, 1));
+  h('Hidráulica (' + np + ' placas en serie)');
+  f('Pérdida de carga', 'MPa', n(r.dp / 1e6, 2));
+  f('Potencia de bombeo', 'MW', n(2 * r.potenciaBombeo / 1e6, 2));
+  h('Temperaturas');
+  f('Pared expuesta máxima', '$^\\circ$C', n(r.T_pared_max - C, 1));
+  f('Pared mojada máxima', '$^\\circ$C', n(r.T_pelicula_max - C, 1));
+  f('Dispersión de $T$ a la salida de la placa ' + np, 'K', n(disp, 2));
+  h('Calor absorbido por placa');
+  placas.forEach(function(q){ f('Placa ' + q.numero, 'MW', n(2 * q.Q_util / 1e6, 2)); });
+  return R;
+}
+function pieTabla(r){
+  return 'Resultados del receptor octogonal de sal solar, con mezcla entre columnas $\\lambda = ' + nm(r.lam, 2) +
+    '$. Flujo medio $\\bar q\'\' = ' + nm(est.q_medio, 2) + '$~MW/m$^2$ y máximo $q\'\'_{max} = ' + nm(est.q_pico, 2) +
+    '$~MW/m$^2$; sal de ' + n(est.T_ent, 0) + ' a ' + n(est.T_sal, 0) + '~$^\\circ$C; $\\alpha = ' + nm(est.alfa, 2) +
+    '$, $\\varepsilon = ' + nm(est.eps, 2) + '$, $h_{ext} = ' + n(est.h_ext, 0) + '$~W/(m$^2$\\,K), $k_{acero} = ' +
+    n(ROC.K_ACERO, 0) + '$~W/(m\\,K). Potencias y gasto del receptor completo, el doble de la mitad resuelta.';
+}
+function tablaTex(r){
+  var L = [];
+  filasTabla(r).forEach(function(x){
+    if (x.cab) L.push((L.length ? '    \\midrule\n' : '') + '    \\multicolumn{3}{l}{\\textit{' + x.cab + '}} \\\\');
+    else L.push('    ' + x.l + ' & ' + x.u + ' & ' + x.v.replace(/ × /g, ' $\\times$ ') + ' \\\\');
+  });
+  return [
+    '% Tabla de resultados del receptor octogonal (lambda = ' + nc(r.lam, 2) + '), generada por la web.',
+    '% Compilar con: pdflatex tabla_resultados_octogonal.tex',
+    '\\documentclass[border=10pt]{standalone}',
+    '',
+    '\\usepackage[utf8]{inputenc}', '\\usepackage[T1]{fontenc}',
+    '\\usepackage[spanish,es-noquoting,es-tabla]{babel}',
+    '\\usepackage{lmodern}', '\\usepackage{amsmath}', '\\usepackage{booktabs}', '\\usepackage{caption}',
+    '',
+    '\\captionsetup{font=small, labelfont=bf, skip=6pt}',
+    '\\newsavebox{\\tabla}',
+    '',
+    '\\begin{document}',
+    '\\sbox{\\tabla}{\\small',
+    '  \\begin{tabular}{llr}',
+    '    \\toprule',
+    '    Magnitud & Unidad & Valor \\\\',
+    '    \\midrule',
+    L.join('\n'),
+    '    \\bottomrule',
+    '  \\end{tabular}}',
+    '\\begin{minipage}{\\wd\\tabla}',
+    '  \\small',
+    '  \\captionof{table}{' + pieTabla(r) + '}',
+    '  \\label{tab:receptor_octogonal}',
+    '  \\usebox{\\tabla}',
+    '\\end{minipage}',
+    '\\end{document}', ''
+  ].join('\n');
+}
+
+// Mini-compositor: el subconjunto de LaTeX que usa la tabla, a segmentos
+var GRIEGAS = { '\\delta':'δ', '\\lambda':'λ', '\\alpha':'α', '\\varepsilon':'ε', '\\circ':'°', '\\times':'×' };
+function segmentos(tex){
+  tex = tex.replace(/\\bar q/g, 'q\u0304').replace(/''/g, '″').replace(/\\sqrt\{2\}/g, '√2')
+    .replace(/\\(delta|lambda|alpha|varepsilon|circ|times)/g, function(m){ return GRIEGAS[m]; })
+    .replace(/\\,/g, '\u2009').replace(/\\%/g, '%').replace(/~/g, '\u00a0').replace(/\{,\}/g, ',')
+    .replace(/\\textit\{([^}]*)\}/g, '$1');
+  var S = [], mate = false, i = 0, c;
+  function pon(t, pos, it){ S.push({ t: t, pos: pos, it: it }); }
+  while (i < tex.length){
+    c = tex.charAt(i);
+    if (c === '$'){ mate = !mate; i++; continue; }
+    if (c === '_' || c === '^'){
+      var pos = c === '_' ? 'sub' : 'sup', t;
+      if (tex.charAt(i + 1) === '{'){ var e = tex.indexOf('}', i); t = tex.slice(i + 2, e); i = e + 1; }
+      else { t = tex.charAt(i + 1); i += 2; }
+      pon(t, pos, mate && /[A-Za-z]/.test(t)); continue;
+    }
+    pon(c, '', mate && /[A-Za-z]/.test(c)); i++;
+  }
+  return S;
+}
+var SERIF = '"Latin Modern Roman", "CMU Serif", "Computer Modern", "Times New Roman", Georgia, serif';
+function fuenteSeg(s, tam, base){
+  var e = s.pos ? tam * 0.7 : tam;
+  return (s.it ? 'italic ' : '') + (base || 400) + ' ' + e + 'px ' + SERIF;
+}
+function anchoTex(o, tex, tam, base){
+  var w = 0;
+  segmentos(tex).forEach(function(s){ o.font = fuenteSeg(s, tam, base); w += o.measureText(s.t).width; });
+  return w;
+}
+function pintaTex(o, tex, x, y, tam, color, alinear, base){
+  if (alinear === 'right') x -= anchoTex(o, tex, tam, base);
+  o.fillStyle = color; o.textAlign = 'left'; o.textBaseline = 'alphabetic';
+  segmentos(tex).forEach(function(s){
+    o.font = fuenteSeg(s, tam, base);
+    o.fillText(s.t, x, y + (s.pos === 'sup' ? -0.38 * tam : s.pos === 'sub' ? 0.2 * tam : 0));
+    x += o.measureText(s.t).width;
+  });
+}
+function palabrasTex(tex){
+  var P = [], cur = '', mate = false;
+  for (var i = 0; i < tex.length; i++){
+    var c = tex.charAt(i);
+    if (c === '$') mate = !mate;
+    if (c === ' ' && !mate){ if (cur) P.push(cur); cur = ''; } else cur += c;
+  }
+  if (cur) P.push(cur);
+  return P;
+}
+
+function dibujarTabla(r){
+  var esc = 4, tam = 15, sep = 22, alto = 22, borde = 14;
+  var filas = filasTabla(r);
+  var medir = document.createElement('canvas').getContext('2d');
+  var w0 = anchoTex(medir, 'Magnitud', tam), w1 = anchoTex(medir, 'Unidad', tam), w2 = anchoTex(medir, 'Valor', tam);
+  filas.forEach(function(x){
+    if (x.cab) return;
+    w0 = Math.max(w0, anchoTex(medir, x.l, tam)); w1 = Math.max(w1, anchoTex(medir, x.u, tam));
+    w2 = Math.max(w2, anchoTex(medir, x.v, tam));
+  });
+  var wt = w0 + w1 + w2 + 2 * sep;
+  // Pie compuesto en lineas del ancho de la tabla; "Tabla 1." en negrita delante
+  var tp = 13.5, lineas = [[]], ancho = 0, esp = anchoTex(medir, ' ', tp);
+  var etq = 'Tabla 1. ', we = anchoTex(medir, etq, tp, 700);
+  ancho = we;
+  palabrasTex(pieTabla(r)).forEach(function(p){
+    var pw = anchoTex(medir, p, tp), lin = lineas[lineas.length - 1];
+    if (lin.length && ancho + esp + pw > wt){ lineas.push([]); lin = lineas[lineas.length - 1]; ancho = 0; }
+    ancho += (lin.length ? esp : 0) + pw; lin.push(p);
+  });
+  var altPie = lineas.length * 18 + 12;
+  var W = wt + 2 * borde, Hmax = borde * 2 + altPie + (filas.length + 4) * alto;
+  var cv = document.createElement('canvas'); cv.width = Math.round(W * esc); cv.height = Math.round(Hmax * esc);
+  var o = cv.getContext('2d'); o.scale(esc, esc);
+  o.fillStyle = '#FFFFFF'; o.fillRect(0, 0, W, Hmax);
+  var k = '#000000', x0 = borde, y = borde + 13;
+  lineas.forEach(function(l, q){
+    var x = x0;
+    if (q === 0){ pintaTex(o, etq, x, y, tp, k, 'left', 700); x += we; }
+    l.forEach(function(p, m){ pintaTex(o, p, x, y, tp, k); x += anchoTex(o, p, tp) + esp; });
+    y += 18;
+  });
+  y = borde + altPie;
+  function regla(yy, g){ o.fillStyle = k; o.fillRect(x0, yy, wt, g); }
+  var c1 = x0 + w0 + sep;
+  regla(y, 1.4); y += 1.4;
+  y += alto - 6;
+  pintaTex(o, 'Magnitud', x0, y, tam, k); pintaTex(o, 'Unidad', c1, y, tam, k);
+  pintaTex(o, 'Valor', x0 + wt, y, tam, k, 'right');
+  y += 6; regla(y, 0.7); y += 0.7;
+  filas.forEach(function(x, q){
+    if (x.cab){
+      if (q){ regla(y + 3, 0.7); y += 3.7; }
+      y += alto - 6;
+      o.font = 'italic 400 ' + tam + 'px ' + SERIF; o.fillStyle = k; o.textAlign = 'left';
+      o.fillText(x.cab, x0, y);
+      y += 6;
+    } else {
+      y += alto - 6;
+      pintaTex(o, x.l, x0, y, tam, k); pintaTex(o, x.u, c1, y, tam, k);
+      pintaTex(o, x.v, x0 + wt, y, tam, k, 'right');
+      y += 6;
+    }
+  });
+  regla(y + 3, 1.4);
+  var Hf = y + 3 + 1.4 + borde;
+  var rec = document.createElement('canvas'); rec.width = cv.width; rec.height = Math.round(Hf * esc);
+  rec.getContext('2d').drawImage(cv, 0, 0);
+  return { cv: rec, w: rec.width / esc, h: rec.height / esc };
+}
+
+function guardarBlob(b, nombre){
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(b); a.download = nombre;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+}
+// PDF minimo de una pagina con la tabla como imagen JPEG a 4x
+function pdfDeImagen(cv, w, h){
+  var b64 = cv.toDataURL('image/jpeg', 0.98).split(',')[1], bin = atob(b64), jpg = new Uint8Array(bin.length), i;
+  for (i = 0; i < bin.length; i++) jpg[i] = bin.charCodeAt(i);
+  var enc = new TextEncoder(), partes = [], pos = 0, offs = [];
+  function txt(s){ var u = enc.encode(s); partes.push(u); pos += u.length; }
+  function obj(num, cuerpo){ offs[num] = pos; txt(num + ' 0 obj\n' + cuerpo + '\nendobj\n'); }
+  var W = w.toFixed(2), H = h.toFixed(2), cont = 'q ' + W + ' 0 0 ' + H + ' 0 0 cm /Im0 Do Q';
+  txt('%PDF-1.4\n');
+  obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+  obj(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + H + '] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>');
+  offs[4] = pos;
+  txt('4 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + cv.width + ' /Height ' + cv.height +
+      ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpg.length + ' >>\nstream\n');
+  partes.push(jpg); pos += jpg.length;
+  txt('\nendstream\nendobj\n');
+  obj(5, '<< /Length ' + cont.length + ' >>\nstream\n' + cont + '\nendstream');
+  var xr = pos, x = 'xref\n0 6\n0000000000 65535 f \n';
+  for (i = 1; i <= 5; i++) x += ('0000000000' + offs[i]).slice(-10) + ' 00000 n \n';
+  txt(x + 'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + xr + '\n%%EOF\n');
+  return new Blob(partes, { type: 'application/pdf' });
+}
+document.addEventListener('click', function(e){
+  var b = e.target.closest && e.target.closest('[data-tabla]'); if (!b || !ultimo) return;
+  var que = b.dataset.tabla, base = 'octogono_tabla_resultados';
+  if (que === 'tex'){ guardarBlob(new Blob([tablaTex(ultimo)], { type: 'text/plain;charset=utf-8' }), base + '.tex'); return; }
+  var t = dibujarTabla(ultimo);
+  if (que === 'png') t.cv.toBlob(function(bl){ guardarBlob(bl, base + '.png'); }, 'image/png');
+  else guardarBlob(pdfDeImagen(t.cv, t.w, t.h), base + '.pdf');
 });
 
 /* ---------------------------------------------------------- validez ----- */
