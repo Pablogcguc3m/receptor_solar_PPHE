@@ -487,7 +487,7 @@ img{max-width:100%}
       <label class="mando">
         <span class="mando-cab"><span class="mando-nom"><i>s</i><sub>T</sub>, paso transversal</span>
           <output class="mando-val" for="s_t"></output></span>
-        <input type="range" id="s_t" min="51.5" max="72" step="0.1" value="72">
+        <input type="range" id="s_t" min="51.5" max="200" step="0.1" value="72">
       </label>
       <label class="mando">
         <span class="mando-cab"><span class="mando-nom"><i>s</i><sub>L</sub>, paso longitudinal</span>
@@ -502,7 +502,7 @@ img{max-width:100%}
       <label class="mando">
         <span class="mando-cab"><span class="mando-nom"><i>d</i><sub>sp</sub>, diámetro de soldadura</span>
           <output class="mando-val" for="d_sp"></output></span>
-        <input type="range" id="d_sp" min="7.2" max="10" step="0.05" value="7.2">
+        <input type="range" id="d_sp" min="7.2" max="34" step="0.05" value="7.2">
         <span class="nota-panel" id="nota-celda"></span>
       </label>
       <label class="mando">
@@ -844,10 +844,14 @@ var UNIDAD = {
 var $ = function(id){ return document.getElementById(id); };
 
 /* ---------------------------------------------------------- celda ------- */
-// Igual que en la pagina del aire: Piper da rangos de tres cocientes, a =
-// s2L/sT, b = dsp/sT y c = b_i/sT, y cada deslizador recorre lo que admite la
-// correlacion con los otros tres fijos. Todo en mm.
-var D_SP_FABRICACION = [7.2, 10.0];
+// Piper da rangos de tres cocientes, a = s2L/sT, b = dsp/sT y c = b_i/sT.
+// s_L, b_i y d_sp recorren lo que admite la correlacion con los demas fijos;
+// s_T, en cambio, llega hasta S_T_MAX arrastrando d_sp, b_i y s_L para que la
+// celda siga dentro de Piper (la celda se escala). Por eso el tope de d_sp es
+// 34 mm: el que pide s_T = 200 mm en las celdas cuadrada y transversal
+// (d_sp/s_T >= 0,17). Todo en mm.
+var D_SP_FABRICACION = [7.2, 34.0];
+var S_T_MAX = 200;
 
 function dentroPaso(v, paso, arriba){
   var k = v / paso;
@@ -862,7 +866,7 @@ function familia(id){
 }
 function rangosCelda(e){
   var f = familia(e.familia), t = e.s_t;
-  var sT = [Math.max(e.d_sp / f.b[1], e.b_i / f.c[1]), Math.min(e.d_sp / f.b[0], e.b_i / f.c[0])];
+  var sT = [D_SP_FABRICACION[0] / f.b[1], Math.min(D_SP_FABRICACION[1] / f.b[0], S_T_MAX)];
   var dsp = [Math.max(f.b[0] * t, D_SP_FABRICACION[0]), Math.min(f.b[1] * t, D_SP_FABRICACION[1])];
   return {
     sT:  incluir(redondearRango(sT, 0.1), t),
@@ -876,10 +880,22 @@ function ajustarCelda(){
   var f = familia(est.familia);
   var relacion = est.s_l / est.s_t;
   est.d_sp = +acotar(est.d_sp, D_SP_FABRICACION).toFixed(2);
-  est.s_t = +acotar(est.s_t, redondearRango([est.d_sp / f.b[1], est.d_sp / f.b[0]], 0.1)).toFixed(1);
+  est.s_t = +acotar(est.s_t, redondearRango([est.d_sp / f.b[1], Math.min(est.d_sp / f.b[0], S_T_MAX)], 0.1)).toFixed(1);
   est.b_i = +acotar(est.b_i, redondearRango([f.c[0] * est.s_t, f.c[1] * est.s_t], 0.05)).toFixed(2);
   est.s_l = +acotar(dentroPaso(relacion * est.s_t, 0.05, false),
                     redondearRango([f.a[0] * est.s_t / 2, f.a[1] * est.s_t / 2], 0.05)).toFixed(2);
+}
+// Al mover s_T, la celda se escala: d_sp, b_i y s_L se llevan a lo que admite
+// Piper con el nuevo s_T, tocandolos lo menos posible
+function ajustarPorSt(relacion){
+  var f = familia(est.familia), t;
+  est.s_t = t = +acotar(est.s_t, redondearRango([D_SP_FABRICACION[0] / f.b[1],
+    Math.min(D_SP_FABRICACION[1] / f.b[0], S_T_MAX)], 0.1)).toFixed(1);
+  est.d_sp = +acotar(est.d_sp, redondearRango([Math.max(f.b[0] * t, D_SP_FABRICACION[0]),
+    Math.min(f.b[1] * t, D_SP_FABRICACION[1])], 0.05)).toFixed(2);
+  est.b_i = +acotar(est.b_i, redondearRango([f.c[0] * t, f.c[1] * t], 0.05)).toFixed(2);
+  est.s_l = +acotar(dentroPaso(relacion * t, 0.05, false),
+                    redondearRango([f.a[0] * t / 2, f.a[1] * t / 2], 0.05)).toFixed(2);
 }
 
 /* ---------------------------------------------------------- mandos ------ */
@@ -891,7 +907,7 @@ function pintarMandos(){
   var f = rc.familia;
   $('nota-celda').textContent = 'Piper, ' + f.nombre + ': s₂L/s_T ' + n(f.a[0], 2) + '–' + n(f.a[1], 2) +
     ' · d_sp/s_T ' + n(f.b[0], 2) + '–' + n(f.b[1], 2) + ' · b_i/s_T ' + n(f.c[0], 3) + '–' + n(f.c[1], 3) +
-    '. Cada deslizador recorre lo que admiten los otros tres.';
+    '. s_T llega a ' + S_T_MAX + ' mm y arrastra d_sp, b_i y s_L para seguir en Piper; los demás recorren lo que admiten los otros.';
   Array.prototype.forEach.call($('familia').children, function(b){
     b.setAttribute('aria-pressed', String(b.dataset.familia === est.familia));
   });
@@ -912,7 +928,7 @@ DESLIZ.forEach(function(k){
   $(k).addEventListener('input', function(){
     var relacion = est.s_l / est.s_t;
     est[k] = parseFloat(this.value);
-    if (k === 's_t'){ est.s_l = relacion * est.s_t; ajustarCelda(); }
+    if (k === 's_t') ajustarPorSt(relacion);
     marcarPreset(null);
     pintarMandos();
     calcular();
