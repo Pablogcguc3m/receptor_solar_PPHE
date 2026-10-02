@@ -10,6 +10,9 @@
  * una fila a la vez e iteraba hasta que convergia la ultima; aqui cada porcion
  * para cuando converge ella. Las dos cumplen la misma tolerancia.
  *
+ * Incluye la estrella de 8 puntas (cfg.alfa_estrella): placas dobladas de
+ * ancho w/cos(alfa) con flujo cos(alfa)*q'', como en el original.
+ *
  * Todo en SI y las temperaturas en KELVIN, como en el original.
  */
 (function (global) {
@@ -76,6 +79,8 @@
   var ZETA_DZ = 1.5;                     // Zonas de distribucion, ec. (19)
   var TOL_FILA = 1e-9;                   // Newton en la salida de cada porcion [K]
   var N_PLACAS = 8;
+  // Angulo de la estrella con el que los picos internos llegan al centro
+  var ALFA_ESTRELLA_MAX = Math.PI / 2 - Math.PI / N_PLACAS;
 
   // Rangos de validez de las correlaciones, tal y como los dan los articulos
   // (Fuentes/ del TFG):
@@ -290,6 +295,7 @@
   /* cfg:
    *   altura, D        [m]      alto de las placas y diametro del octogono
    *   circunscrito     bool     D de vertice a vertice (true) o entre caras
+   *   alfa_estrella    [rad]    angulo de la estrella de 8 puntas (0 = octogono)
    *   q_medio, q_pico  [W/m2]
    *   T_ent, T_sal     [K]      entrada y salida impuestas de la sal
    *   lam              [-]      mezcla entre columnas
@@ -304,6 +310,14 @@
     var mapa = mapaDesdeMedioYPico(L, w, nPl, cfg.q_medio, cfg.q_pico);
     var lam = cfg.lam, alfa = cfg.alfa, eps = cfg.eps, h_ext = cfg.h_ext;
     if (!(lam >= 0 && lam <= 1)) throw new ErrorModelo('λ tiene que estar entre 0 y 1.', '');
+    // Estrella: cada placa se dobla en dos lados que forman alfa_e con el lado
+    // del octogono. Ancho desarrollado w/cos(alfa_e) y flujo cos(alfa_e)*q''
+    var alfaE = cfg.alfa_estrella || 0;
+    if (!(alfaE >= 0 && alfaE <= ALFA_ESTRELLA_MAX + 1e-12)) {
+      throw new ErrorModelo('El ángulo de la estrella tiene que estar entre 0 y ' +
+                            (ALFA_ESTRELLA_MAX * 180 / Math.PI).toFixed(1) + '°.', '');
+    }
+    var cosE = Math.cos(alfaE), wpp = w / cosE;
     if (!(cfg.T_sal > cfg.T_ent + 1)) {
       throw new ErrorModelo('La salida tiene que estar por encima de la entrada.',
                             'Sube la temperatura de salida o baja la de entrada.');
@@ -311,17 +325,23 @@
     verificarT(cfg.T_ent); verificarT(cfg.T_sal);
 
     var panel = { s_t: cfg.s_t, s_2l: cfg.s_2l, b_i: cfg.b_i, d_sp: cfg.d_sp, delta_pp: cfg.delta_pp };
-    var M = Math.max(redondeoPython(w / panel.s_t), 1);
+    var M = Math.max(redondeoPython(wpp / panel.s_t), 1);
     var N = Math.max(redondeoPython(L / panel.s_2l), 1);
     var fracSoldadura = 2 * (Math.PI * panel.d_sp * panel.d_sp / 4) / (panel.s_t * panel.s_2l);
     var n = asignacionDeConstantes(panel.s_t, panel.s_2l, panel.d_sp, panel.b_i);
-    var seccion = fChI(panel.b_i, w, 0.0);           // Ec. (16), w_pp = w, w_e = 0
+    var seccion = fChI(panel.b_i, wpp, 0.0);         // Ec. (16), w_e = 0
     var de = deI(panel.b_i);                          // Ec. (14)
     var e = panel.delta_pp;
+    // Cada porcion (ancho wpp/M) se proyecta sobre un tramo w/M del lado del
+    // octogono y recibe cos(alfa_e) por el flujo medio de ese tramo
     var flujos = [];
-    for (var kk = 0; kk < nPl; kk++) flujos.push(mapa.mapaNodal(kk * w, w, M, N));
+    for (var kk = 0; kk < nPl; kk++) {
+      var fk = mapa.mapaNodal(kk * w, w, M, N);
+      if (cosE !== 1) fk.forEach(function (fila) { for (var c = 0; c < M; c++) fila[c] *= cosE; });
+      flujos.push(fk);
+    }
 
-    var dy = L / N, A = (w / M) * dy, A_f = A * (1.0 - fracSoldadura);
+    var dy = L / N, A = (wpp / M) * dy, A_f = A * (1.0 - fracSoldadura);
 
     // -- Canal interno: ec. (3) -> Re, Pr -> Nu (20) -> h ---------------------
     function hInterno(T, G) {
@@ -450,7 +470,7 @@
       }
       var perfil = T.slice();
       return {
-        numero: k + 1, sube: sube, x0: k * w, T_ent: T_ent, T_sal: T_sal,
+        numero: k + 1, sube: sube, x0: k * wpp, T_ent: T_ent, T_sal: T_sal,
         perfilSalida: perfil, T_fluido: T_fluido, T_pared: T_pared, T_pelicula: T_pel,
         T_adiabatica: T_adiab, entradas: entradas, q_nodo: q_nodo, flujo: flujo,
         Q_inc: Q_inc, Q_util: Q_util, Q_conv: Q_conv, Q_rad: Q_rad, Q_refl: (1 - alfa) * Q_inc,
@@ -506,7 +526,8 @@
 
     // -- Resumen ----------------------------------------------------------------
     var res = {
-      mapa: mapa, w: w, L: L, W: mapa.W, nPlacas: nPl, M: M, N: N, dy: dy, dx: w / M,
+      mapa: mapa, w: w, wpp: wpp, alfaEstrella: alfaE, L: L, W: nPl * wpp, nPlacas: nPl,
+      M: M, N: N, dy: dy, dx: wpp / M,
       A_celda: A, A_f: A_f, fracSoldadura: fracSoldadura, n: n, panel: panel,
       seccion: seccion, de: de, lam: lam, alfa: alfa, G: G, iteraciones: iteraciones,
       placas: placas, T_ent: cfg.T_ent, T_sal: placas[nPl - 1].T_sal
@@ -545,7 +566,7 @@
     res.limiteAcero = maxPared > LIMITE_AISI321;
     res.limiteSal = maxPel > T_PELICULA_MAX;
     res.xCentros = []; res.yCentros = [];
-    for (i = 0; i < nPl * M; i++) res.xCentros.push((i + 0.5) * w / M);
+    for (i = 0; i < nPl * M; i++) res.xCentros.push((i + 0.5) * wpp / M);
     for (j = 0; j < N; j++) res.yCentros.push((j + 0.5) * dy);
 
     // Recorrido de la sal, fila a fila en el sentido del fluido
@@ -612,7 +633,7 @@
     RANGOS: RANGOS,
     CERO_CELSIUS: CERO_CELSIUS, SIGMA: SIGMA, T_AMB: T_AMB, T_CIELO: T_CIELO,
     LIMITE_AISI321: LIMITE_AISI321, T_PELICULA_MAX: T_PELICULA_MAX, K_ACERO: K_ACERO,
-    ZETA_DZ: ZETA_DZ, N_PLACAS: N_PLACAS, LAMBDA: 0.7, SAL: SAL,
+    ZETA_DZ: ZETA_DZ, N_PLACAS: N_PLACAS, ALFA_ESTRELLA_MAX: ALFA_ESTRELLA_MAX, LAMBDA: 0.7, SAL: SAL,
     ErrorModelo: ErrorModelo, FAMILIAS: FAMILIAS,
     asignacionDeConstantes: asignacionDeConstantes, propiedades: propiedades,
     entalpia: entalpia, TdesdeH: TdesdeH, mapaDesdeMedioYPico: mapaDesdeMedioYPico,

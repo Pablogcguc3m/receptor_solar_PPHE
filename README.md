@@ -46,7 +46,9 @@ Todas corren en el navegador, sin servidor ni instalar nada.
   entre placas. Fija la entrada (290 C) y la salida (565 C) y despeja el gasto.
   Mismo balance por porción que `receptor.py`, vectorizado por filas. Da los
   campos de temperatura de cada placa, la pérdida de carga y, opcionalmente,
-  un barrido de `lambda` (`BARRIDO_LAMBDA`). `receptor.py` se mantiene como
+  un barrido de `lambda` (`BARRIDO_LAMBDA`). Con `ALFA_ESTRELLA` > 0 las placas
+  se doblan en una estrella de 8 puntas (hasta 67.5 grados) para ganar sección
+  de canal. `receptor.py` se mantiene como
   modelo de demostración con aire.
 - **`documentacion_receptor.tex`**: documentación del módulo anterior.
 
