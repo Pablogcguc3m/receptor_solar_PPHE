@@ -10,8 +10,8 @@
  * una fila a la vez e iteraba hasta que convergia la ultima; aqui cada porcion
  * para cuando converge ella. Las dos cumplen la misma tolerancia.
  *
- * Incluye la estrella de 8 puntas (cfg.alfa_estrella): placas dobladas de
- * ancho w/cos(alfa) con flujo cos(alfa)*q'', como en el original.
+ * Incluye la estrella de 8 puntas (cfg.theta_estrella): placas dobladas de
+ * ancho w/cos(theta) con flujo cos(theta)*q'', como en el original.
  *
  * Todo en SI y las temperaturas en KELVIN, como en el original.
  */
@@ -80,7 +80,7 @@
   var TOL_FILA = 1e-9;                   // Newton en la salida de cada porcion [K]
   var N_PLACAS = 8;
   // Angulo de la estrella con el que los picos internos llegan al centro
-  var ALFA_ESTRELLA_MAX = Math.PI / 2 - Math.PI / N_PLACAS;
+  var THETA_ESTRELLA_MAX = Math.PI / 2 - Math.PI / N_PLACAS;
 
   // Rangos de validez de las correlaciones, tal y como los dan los articulos
   // (Fuentes/ del TFG):
@@ -295,7 +295,7 @@
   /* cfg:
    *   altura, D        [m]      alto de las placas y diametro del octogono
    *   circunscrito     bool     D de vertice a vertice (true) o entre caras
-   *   alfa_estrella    [rad]    angulo de la estrella de 8 puntas (0 = octogono)
+   *   theta_estrella   [rad]    angulo de la estrella de 8 puntas (0 = octogono)
    *   q_medio, q_pico  [W/m2]
    *   T_ent, T_sal     [K]      entrada y salida impuestas de la sal
    *   lam              [-]      mezcla entre columnas
@@ -310,14 +310,14 @@
     var mapa = mapaDesdeMedioYPico(L, w, nPl, cfg.q_medio, cfg.q_pico);
     var lam = cfg.lam, alfa = cfg.alfa, eps = cfg.eps, h_ext = cfg.h_ext;
     if (!(lam >= 0 && lam <= 1)) throw new ErrorModelo('λ tiene que estar entre 0 y 1.', '');
-    // Estrella: cada placa se dobla en dos lados que forman alfa_e con el lado
-    // del octogono. Ancho desarrollado w/cos(alfa_e) y flujo cos(alfa_e)*q''
-    var alfaE = cfg.alfa_estrella || 0;
-    if (!(alfaE >= 0 && alfaE <= ALFA_ESTRELLA_MAX + 1e-12)) {
+    // Estrella: cada placa se dobla en dos lados que forman theta con el lado
+    // del octogono. Ancho desarrollado w/cos(theta) y flujo cos(theta)*q''
+    var theta = cfg.theta_estrella || 0;
+    if (!(theta >= 0 && theta <= THETA_ESTRELLA_MAX + 1e-12)) {
       throw new ErrorModelo('El ángulo de la estrella tiene que estar entre 0 y ' +
-                            (ALFA_ESTRELLA_MAX * 180 / Math.PI).toFixed(1) + '°.', '');
+                            (THETA_ESTRELLA_MAX * 180 / Math.PI).toFixed(1) + '°.', '');
     }
-    var cosE = Math.cos(alfaE), wpp = w / cosE;
+    var cosE = Math.cos(theta), wpp = w / cosE;
     if (!(cfg.T_sal > cfg.T_ent + 1)) {
       throw new ErrorModelo('La salida tiene que estar por encima de la entrada.',
                             'Sube la temperatura de salida o baja la de entrada.');
@@ -333,7 +333,7 @@
     var de = deI(panel.b_i);                          // Ec. (14)
     var e = panel.delta_pp;
     // Cada porcion (ancho wpp/M) se proyecta sobre un tramo w/M del lado del
-    // octogono y recibe cos(alfa_e) por el flujo medio de ese tramo
+    // octogono y recibe cos(theta) por el flujo medio de ese tramo
     var flujos = [];
     for (var kk = 0; kk < nPl; kk++) {
       var fk = mapa.mapaNodal(kk * w, w, M, N);
@@ -526,7 +526,7 @@
 
     // -- Resumen ----------------------------------------------------------------
     var res = {
-      mapa: mapa, w: w, wpp: wpp, alfaEstrella: alfaE, L: L, W: nPl * wpp, nPlacas: nPl,
+      mapa: mapa, w: w, wpp: wpp, thetaEstrella: theta, L: L, W: nPl * wpp, nPlacas: nPl,
       M: M, N: N, dy: dy, dx: wpp / M,
       A_celda: A, A_f: A_f, fracSoldadura: fracSoldadura, n: n, panel: panel,
       seccion: seccion, de: de, lam: lam, alfa: alfa, G: G, iteraciones: iteraciones,
@@ -633,7 +633,7 @@
     RANGOS: RANGOS,
     CERO_CELSIUS: CERO_CELSIUS, SIGMA: SIGMA, T_AMB: T_AMB, T_CIELO: T_CIELO,
     LIMITE_AISI321: LIMITE_AISI321, T_PELICULA_MAX: T_PELICULA_MAX, K_ACERO: K_ACERO,
-    ZETA_DZ: ZETA_DZ, N_PLACAS: N_PLACAS, ALFA_ESTRELLA_MAX: ALFA_ESTRELLA_MAX, LAMBDA: 0.7, SAL: SAL,
+    ZETA_DZ: ZETA_DZ, N_PLACAS: N_PLACAS, THETA_ESTRELLA_MAX: THETA_ESTRELLA_MAX, LAMBDA: 0.7, SAL: SAL,
     ErrorModelo: ErrorModelo, FAMILIAS: FAMILIAS,
     asignacionDeConstantes: asignacionDeConstantes, propiedades: propiedades,
     entalpia: entalpia, TdesdeH: TdesdeH, mapaDesdeMedioYPico: mapaDesdeMedioYPico,

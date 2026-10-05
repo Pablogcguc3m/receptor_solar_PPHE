@@ -19,22 +19,22 @@ Basta cambiar DIAMETRO_CIRCUNSCRITO para usar la otra lectura.
 ESTRELLA DE 8 PUNTAS. Para dar más sección al canal, cada placa se dobla por
 su eje vertical hacia dentro: el lado w del octógono se sustituye por dos lados
 de la estrella que van de sus vértices a un pico interno sobre su mediatriz.
-ALFA_ESTRELLA es el ángulo entre cada lado de la estrella y el lado del
+THETA_ESTRELLA es el ángulo entre cada lado de la estrella y el lado del
 octógono que lo circunscribe; con 0 se recupera el octógono. Entonces
 
-    lado de la estrella    w/(2*cos(alfa))
-    pico interno           (w/2)*tan(alfa) hacia dentro desde el centro del lado
-    placa desarrollada     w_pp = w/cos(alfa)  (dos lados de la estrella)
+    lado de la estrella    w/(2*cos(theta))
+    pico interno           (w/2)*tan(theta) hacia dentro desde el centro del lado
+    placa desarrollada     w_pp = w/cos(theta)  (dos lados de la estrella)
 
 Siguen siendo 8 placas; cada una, doblada, tiene un ancho w_pp, y con él crecen
 la malla (M = w_pp/s_T), el área de cada porción y la sección de paso de la
-ec. (16). El pico interno llega al centro del octógono cuando (w/2)*tan(alfa)
-es la apotema, (w/2)/tan(pi/n): alfa_max = pi/2 - pi/n = 67.5 grados.
+ec. (16). El pico interno llega al centro del octógono cuando (w/2)*tan(theta)
+es la apotema, (w/2)/tan(pi/n): theta_max = pi/2 - pi/n = 67.5 grados.
 
 El mapa de flujo se sigue dando sobre el octógono (la superficie que ve el
-campo). Sobre un lado de la estrella, inclinado alfa respecto de ella, el
-flujo incidente es cos(alfa)*q'', y cada porción de ancho w_pp/M se proyecta
-sobre un tramo w/M del lado del octógono: el flujo de la porción es cos(alfa)
+campo). Sobre un lado de la estrella, inclinado theta respecto de ella, el
+flujo incidente es cos(theta)*q'', y cada porción de ancho w_pp/M se proyecta
+sobre un tramo w/M del lado del octógono: el flujo de la porción es cos(theta)
 por el flujo medio de ese tramo, y la potencia que recibe la placa no cambia.
 Se desprecian el sombreado y la reradiación entre las dos caras de cada pico:
 cada porción pierde calor por toda su área, como en el octógono.
@@ -164,7 +164,7 @@ N_PLACAS = 8                  # Placas del octógono [-]
 ALTURA = 10.5                 # Altura de las placas [m]
 DIAMETRO = 8.5                # Diámetro del octógono [m]
 DIAMETRO_CIRCUNSCRITO = True  # True: de vértice a vértice; False: entre caras
-ALFA_ESTRELLA = radians(0.0)  # Ángulo de la estrella [rad]; 0 = octógono, máx. 67.5 grados
+THETA_ESTRELLA = radians(0.0)  # Ángulo de la estrella [rad]; 0 = octógono, máx. 67.5 grados
 
 Q_MEDIO = 0.8e6               # Flujo medio sobre el receptor [W/m2]
 Q_PICO = 1.2e6                # Flujo máximo [W/m2]
@@ -191,7 +191,7 @@ def ancho_placa(D=DIAMETRO, n=N_PLACAS, circunscrito=DIAMETRO_CIRCUNSCRITO):
     return D * sin(pi / n) if circunscrito else D * tan(pi / n)
 
 
-def alfa_estrella_max(n=N_PLACAS):
+def theta_estrella_max(n=N_PLACAS):
     """Ángulo con el que los picos internos de la estrella llegan al centro [rad]."""
     return pi / 2 - pi / n
 
@@ -401,7 +401,7 @@ class ReceptorOctogonal:
     eps: float = rec.EPSILON
     alfa: float = rec.ABSORTIVIDAD
     serpentin: bool = True
-    alfa_estrella: float = ALFA_ESTRELLA  # [rad]; ver la nota del módulo
+    theta_estrella: float = THETA_ESTRELLA  # [rad]; ver la nota del módulo
     w_placa: float = field(init=False)    # Ancho desarrollado de la placa doblada [m]
     M: int = field(init=False)
     N: int = field(init=False)
@@ -416,12 +416,12 @@ class ReceptorOctogonal:
         fijar = lambda campo, valor: object.__setattr__(self, campo, valor)
         if not 0.0 <= self.lam <= 1.0:
             raise ValueError(f"lam tiene que estar entre 0 y 1, no {self.lam}.")
-        limite = alfa_estrella_max(2 * self.mapa.n_placas)
-        if not 0.0 <= self.alfa_estrella <= limite + 1e-12:
-            raise ValueError(f"alfa_estrella tiene que estar entre 0 y {degrees(limite):.1f} "
-                             f"grados, no {degrees(self.alfa_estrella):.2f}.")
-        cos_a = cos(self.alfa_estrella)
-        w_pp = w / cos_a                                   # Placa doblada, desarrollada
+        limite = theta_estrella_max(2 * self.mapa.n_placas)
+        if not 0.0 <= self.theta_estrella <= limite + 1e-12:
+            raise ValueError(f"theta_estrella tiene que estar entre 0 y {degrees(limite):.1f} "
+                             f"grados, no {degrees(self.theta_estrella):.2f}.")
+        cos_t = cos(self.theta_estrella)
+        w_pp = w / cos_t                                   # Placa doblada, desarrollada
         M, N = max(round(w_pp / i.s_t), 1), max(round(L / i.s_2l), 1)
         fijar("w_placa", w_pp)
         fijar("M", M)
@@ -431,8 +431,8 @@ class ReceptorOctogonal:
         fijar("seccion", form.f_chI(i.b_i, w_pp, 0.0))    # Ec. (16), w_e = 0
         fijar("de", form.deI(i.b_i))                       # Ec. (14)
         # Cada porción (ancho w_pp/M) se proyecta sobre un tramo w/M del lado del
-        # octógono, y sobre ella incide cos(alfa) por el flujo medio de ese tramo
-        fijar("flujos", tuple(cos_a * self.mapa.mapa_nodal(k * w, w, M, N)
+        # octógono, y sobre ella incide cos(theta) por el flujo medio de ese tramo
+        fijar("flujos", tuple(cos_t * self.mapa.mapa_nodal(k * w, w, M, N)
                               for k in range(self.mapa.n_placas)))
 
     # -- Canal interno ------------------------------------------------------
@@ -640,15 +640,15 @@ def resumen(res):
     rho_m = 0.5 * (pr_e.rho + pr_s.rho)
     raya = "=" * 94
 
-    forma = "EN ESTRELLA" if r.alfa_estrella > 0 else "OCTOGONAL"
+    forma = "EN ESTRELLA" if r.theta_estrella > 0 else "OCTOGONAL"
     print(f"\n{raya}\nRECEPTOR {forma} - {r.fluido.nombre.upper()}, lambda = {r.lam:.2f}\n{raya}")
     print(f"Octogono de {N_PLACAS} placas, D = {DIAMETRO} m "
           f"({'circunscrito' if DIAMETRO_CIRCUNSCRITO else 'inscrito'}), lado {m.w:.3f} m")
-    if r.alfa_estrella > 0:
-        print(f"Estrella de {N_PLACAS} puntas, alfa = {degrees(r.alfa_estrella):.1f} grados "
-              f"(max {degrees(alfa_estrella_max()):.1f}): lado {r.w_placa/2:.3f} m, pico interno a "
-              f"{m.w/2*tan(r.alfa_estrella):.3f} m del lado, flujo x cos(alfa) = "
-              f"{cos(r.alfa_estrella):.3f}")
+    if r.theta_estrella > 0:
+        print(f"Estrella de {N_PLACAS} puntas, theta = {degrees(r.theta_estrella):.1f} grados "
+              f"(max {degrees(theta_estrella_max()):.1f}): lado {r.w_placa/2:.3f} m, pico interno a "
+              f"{m.w/2*tan(r.theta_estrella):.3f} m del lado, flujo x cos(theta) = "
+              f"{cos(r.theta_estrella):.3f}")
     print(f"Placas de {m.L:.2f} x {r.w_placa:.3f} m (desarrolladas), {m.L*r.w_placa:.2f} m2 "
           f"cada una, {N_PLACAS*m.L*r.w_placa:.1f} m2 en total")
     print(m.resumen())
@@ -883,8 +883,8 @@ def _dibujar_campo(res, plt, atributo, nombre, cmap, ancho_placa=2.0):
     ejes[0].set_ylabel("$y$, altura [m]")
     barra = fig.colorbar(im, ax=list(ejes), shrink=0.8, label=f"$T$ {nombre.lower()} [°C]")
     _barra_acotada(barra, vmin, vmax)
-    estrella = (rf"estrella $\alpha$ = {degrees(r.alfa_estrella):.1f}°, "
-                if r.alfa_estrella > 0 else "")
+    estrella = (rf"estrella $\theta$ = {degrees(r.theta_estrella):.1f}°, "
+                if r.theta_estrella > 0 else "")
     fig.suptitle(rf"Temperatura de la {nombre.lower()} ({estrella}$\lambda$ = {r.lam:.2f}, "
                  rf"$G$ = {res.G:.1f} kg/s por mitad)")
     return fig

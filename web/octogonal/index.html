@@ -427,10 +427,10 @@ img{max-width:100%}
         </div>
       </div>
       <label class="mando">
-        <span class="mando-cab"><span class="mando-nom"><i>&alpha;</i><sub>e</sub>, ángulo de la estrella</span>
-          <output class="mando-val" for="alfa_e"></output></span>
-        <input type="range" id="alfa_e" min="0" max="67.5" step="0.5" value="0">
-        <span class="nota-panel">Ángulo entre cada lado de la estrella de 8 puntas y el lado del octógono. 0° es el octógono; a 67,5° los picos internos llegan al centro. Cada placa se dobla: ancho <i>w</i>/cos <i>α</i><sub>e</sub> y flujo cos <i>α</i><sub>e</sub>·<i>q</i>″.</span>
+        <span class="mando-cab"><span class="mando-nom"><i>&theta;</i>, ángulo de la estrella</span>
+          <output class="mando-val" for="theta"></output></span>
+        <input type="range" id="theta" min="0" max="67.5" step="0.5" value="0">
+        <span class="nota-panel">Ángulo entre cada lado de la estrella de 8 puntas y el lado del octógono. 0° es el octógono; a 67,5° los picos internos llegan al centro. Cada placa se dobla: ancho <i>w</i>/cos <i>θ</i> y flujo cos <i>θ</i>·<i>q</i>″.</span>
       </label>
       <label class="mando">
         <span class="mando-cab"><span class="mando-nom"><i>&lambda;</i>, mezcla entre columnas</span>
@@ -733,7 +733,7 @@ img{max-width:100%}
           <div class="hip">
             <ul>
               <li>Se resuelve <strong>medio receptor</strong>: cuatro placas desarrolladas, con el pico de la mancha en el plano de simetría. Potencias y gasto del receptor completo son el doble.</li>
-              <li>Con la <strong>estrella</strong>, cada placa se dobla en dos lados que forman <i>α</i><sub>e</sub> con el lado del octógono: ancho desarrollado <i>w</i>/cos <i>α</i><sub>e</sub>, más columnas y más sección de paso. El mapa se da sobre el octógono y cada cara recibe cos <i>α</i><sub>e</sub>·<i>q</i>″, así que la potencia incidente no cambia. Sin sombras ni reradiación entre las dos caras de cada pico: cada porción pierde calor por toda su área.</li>
+              <li>Con la <strong>estrella</strong>, cada placa se dobla en dos lados que forman <i>θ</i> con el lado del octógono: ancho desarrollado <i>w</i>/cos <i>θ</i>, más columnas y más sección de paso. El mapa se da sobre el octógono y cada cara recibe cos <i>θ</i>·<i>q</i>″, así que la potencia incidente no cambia. Sin sombras ni reradiación entre las dos caras de cada pico: cada porción pierde calor por toda su área.</li>
               <li>La sal recorre las placas <strong>en serie y en serpentín</strong> (sube, baja, sube, baja). Entre placa y placa, un colector ideal la mezcla por completo, sin pérdidas de calor ni de carga.</li>
               <li>La <strong>salida está impuesta</strong>: el gasto sale del balance global, <i>G</i> = <i>Q</i><sub>útil</sub>/Δ<i>h</i>, iterado porque las pérdidas dependen de la pared.</li>
               <li>Dentro de cada placa, el método de la placa con aire: una porción por celda de soldadura, columnas <strong>adiabáticas</strong> ponderadas en entalpía con la <strong>mezcla completa</strong> mediante <i>λ</i>.</li>
@@ -822,7 +822,7 @@ function gradienteCss(fn){
 }
 
 /* ---------------------------------------------------------- estado ------ */
-var BASE = { q_medio:0.8, q_pico:1.2, altura:10.5, D:8.5, circ:true, alfa_e:0, lam:ROC.LAMBDA,
+var BASE = { q_medio:0.8, q_pico:1.2, altura:10.5, D:8.5, circ:true, theta:0, lam:ROC.LAMBDA,
              T_ent:290, T_sal:565, alfa:1, eps:0.85, h_ext:20,
              familia:'longitudinal', s_t:72, s_l:21, b_i:3.4, d_sp:7.2, delta_pp:0.8 };
 var PRESETS = {
@@ -834,10 +834,10 @@ var est = Object.assign({}, PRESETS.base);
 var sel = null;             // {I, j}: columna del receptor desarrollado y fila
 var ultimo = null;
 
-var DESLIZ = ['q_medio','q_pico','altura','D','alfa_e','lam','T_ent','T_sal','alfa','eps','h_ext',
+var DESLIZ = ['q_medio','q_pico','altura','D','theta','lam','T_ent','T_sal','alfa','eps','h_ext',
               's_t','s_l','b_i','d_sp','delta_pp'];
 var UNIDAD = {
-  q_medio:['MW/m²',2], q_pico:['MW/m²',2], altura:['m',1], D:['m',1], alfa_e:['°',1], lam:['',2],
+  q_medio:['MW/m²',2], q_pico:['MW/m²',2], altura:['m',1], D:['m',1], theta:['°',1], lam:['',2],
   T_ent:['°C',0], T_sal:['°C',0], alfa:['',2], eps:['',2], h_ext:['W/m²K',0],
   s_t:['mm',1], s_l:['mm',2], b_i:['mm',2], d_sp:['mm',2], delta_pp:['mm',2]
 };
@@ -965,9 +965,9 @@ function marcarPreset(nombre){
 // la derecha, con la placa 1 junto al pico.
 function geometria(e){
   var nP = ROC.N_PLACAS, R = e.circ ? e.D / 2 : e.D / 2 / Math.cos(Math.PI / nP);
-  var w = 2 * R * Math.sin(Math.PI / nP), al = e.alfa_e * Math.PI / 180, co = Math.cos(al);
-  return { R: R, w: w, ap: R * Math.cos(Math.PI / nP), alfa: al, cos: co, wpp: w / co,
-           lado: w / 2 / co, d: w / 2 * Math.tan(al), max: ROC.ALFA_ESTRELLA_MAX * 180 / Math.PI };
+  var w = 2 * R * Math.sin(Math.PI / nP), al = e.theta * Math.PI / 180, co = Math.cos(al);
+  return { R: R, w: w, ap: R * Math.cos(Math.PI / nP), theta: al, cos: co, wpp: w / co,
+           lado: w / 2 / co, d: w / 2 * Math.tan(al), max: ROC.THETA_ESTRELLA_MAX * 180 / Math.PI };
 }
 
 // SVG de la planta con la paleta dada (colores ya resueltos: tambien se usa
@@ -994,7 +994,7 @@ function svgPlanta(g, pal, S){
   // Circunferencia circunscrita, octogono y plano de simetria
   t.push('<circle cx="' + c + '" cy="' + c + '" r="' + (k * g.R).toFixed(2) + '" fill="none" stroke="' +
          pal.guia + '" stroke-width="1" stroke-dasharray="4 4"/>');
-  if (g.alfa > 0) t.push('<polygon points="' + V.slice(0, nP).map(xy).join(' ') + '" fill="none" stroke="' +
+  if (g.theta > 0) t.push('<polygon points="' + V.slice(0, nP).map(xy).join(' ') + '" fill="none" stroke="' +
                          pal.guia + '" stroke-width="1" stroke-dasharray="3 3"/>');
   t.push('<line x1="' + c + '" y1="' + (c - k * g.R - 24) + '" x2="' + c + '" y2="' + (c + k * g.R + 24) +
          '" stroke="' + pal.tenue + '" stroke-width="1" stroke-dasharray="9 4 2 4"/>');
@@ -1011,7 +1011,7 @@ function svgPlanta(g, pal, S){
            'font-weight="500" ' + fuente + ' fill="' + (j < nP / 2 ? pal.tinta : pal.tenue) + '">' + num + '</text>');
   }
   // Angulo de la estrella en el vertice derecho (placa 3)
-  if (g.alfa > 0.004){
+  if (g.theta > 0.004){
     var v = V[2], u1 = [V[3][0] - v[0], V[3][1] - v[1]], u2 = [Pi[2][0] - v[0], Pi[2][1] - v[1]];
     var l1 = Math.hypot(u1[0], u1[1]), l2 = Math.hypot(u2[0], u2[1]);
     u1 = [u1[0] / l1, u1[1] / l1]; u2 = [u2[0] / l2, u2[1] / l2];
@@ -1023,7 +1023,7 @@ function svgPlanta(g, pal, S){
     var bi = [u1[0] + u2[0], u1[1] + u2[1]], lb = Math.hypot(bi[0], bi[1]);
     var e = [v[0] + (rho + 12) * bi[0] / lb, v[1] + (rho + 12) * bi[1] / lb];
     t.push('<text x="' + e[0].toFixed(1) + '" y="' + (e[1] + 4).toFixed(1) + '" text-anchor="middle" font-size="13" ' +
-           fuente + ' font-style="italic" fill="' + pal.tinta + '">α<tspan font-size="9" dy="3" font-style="normal">e</tspan></text>');
+           fuente + ' font-style="italic" fill="' + pal.tinta + '">θ</text>');
   }
   // Centro, pico de la mancha y rotulo del plano de simetria
   t.push('<path d="M' + (c - 5) + ',' + c + 'h10M' + c + ',' + (c - 5) + 'v10" stroke="' + pal.tenue + '" stroke-width="1"/>');
@@ -1040,12 +1040,12 @@ function filasPlanta(g){
   var sec = est.b_i / 1000 / Math.SQRT2 * g.wpp * 1e4;
   return [
     ['Lado del octógono, <i>w</i>', n(g.w, 3) + ' <span class="u">m</span>'],
-    ['Ángulo de la estrella, <i>α</i><sub>e</sub>', n(est.alfa_e, 1) + ' <span class="u">° (máx ' + n(g.max, 1) + '°)</span>'],
-    ['Lado de la estrella, <i>w</i>/(2 cos <i>α</i><sub>e</sub>)', n(g.lado, 3) + ' <span class="u">m</span>'],
+    ['Ángulo de la estrella, <i>θ</i>', n(est.theta, 1) + ' <span class="u">° (máx ' + n(g.max, 1) + '°)</span>'],
+    ['Lado de la estrella, <i>w</i>/(2 cos <i>θ</i>)', n(g.lado, 3) + ' <span class="u">m</span>'],
     ['Pico interno, hacia dentro del lado', n(g.d, 3) + ' <span class="u">m · ' + n(g.d / g.ap * 100, 0) + ' % de la apotema</span>'],
-    ['Placa desarrollada, <i>w</i><sub>pp</sub> = <i>w</i>/cos <i>α</i><sub>e</sub>', n(g.wpp, 3) + ' <span class="u">m · ×' + n(1 / g.cos, 3) + '</span>'],
+    ['Placa desarrollada, <i>w</i><sub>pp</sub> = <i>w</i>/cos <i>θ</i>', n(g.wpp, 3) + ' <span class="u">m · ×' + n(1 / g.cos, 3) + '</span>'],
     ['Área expuesta total', n(ROC.N_PLACAS * est.altura * g.wpp, 1) + ' <span class="u">m²</span>'],
-    ['Flujo sobre la placa, cos <i>α</i><sub>e</sub>·<i>q</i>″', '×' + n(g.cos, 3) + ' <span class="u">· pico ' + n(est.q_pico * g.cos, 2) + ' MW/m²</span>'],
+    ['Flujo sobre la placa, cos <i>θ</i>·<i>q</i>″', '×' + n(g.cos, 3) + ' <span class="u">· pico ' + n(est.q_pico * g.cos, 2) + ' MW/m²</span>'],
     ['Sección de paso por placa', n(sec, 1) + ' <span class="u">cm²</span>']
   ];
 }
@@ -1056,7 +1056,7 @@ function pintarPlanta(){
   $('planta-svg').innerHTML = svgPlanta(g, {
     fondo: '', relleno: v('--hueco'), guia: v('--muted'), tenue: v('--muted'), tinta: v('--ink'),
     placa: v('--pared'), espejo: 'rgba(255,255,255,.38)' }, 400);
-  $('planta-titulo').textContent = 'Planta del receptor ' + (g.alfa > 0 ? 'en estrella' : 'octogonal');
+  $('planta-titulo').textContent = 'Planta del receptor ' + (g.theta > 0 ? 'en estrella' : 'octogonal');
   $('planta-datos').innerHTML = filasPlanta(g).map(function(f){
     return '<tr><th>' + f[0] + '</th><td>' + f[1] + '</td></tr>';
   }).join('');
@@ -1070,7 +1070,7 @@ function calcular(){
     pendiente = null;
     var cfg = {
       altura: est.altura, D: est.D, circunscrito: est.circ,
-      alfa_estrella: est.alfa_e * Math.PI / 180,
+      theta_estrella: est.theta * Math.PI / 180,
       q_medio: est.q_medio * 1e6, q_pico: est.q_pico * 1e6,
       T_ent: est.T_ent + C, T_sal: est.T_sal + C, lam: est.lam,
       s_t: est.s_t / 1000, s_2l: 2 * est.s_l / 1000, b_i: est.b_i / 1000,
@@ -1402,7 +1402,7 @@ function puntoDeTrabajo(r){
     r.n.familia.charAt(0).toUpperCase() + r.n.familia.slice(1) + ' ' + n(r.panel.s_t * 1e3, 1) +
       ' × ' + n(r.panel.s_2l * 1e3, 1) + ' mm · b_i ' + n(r.panel.b_i * 1e3, 2) + ' mm · d_sp ' +
       n(r.panel.d_sp * 1e3, 2) + ' mm · δ ' + n(r.panel.delta_pp * 1e3, 2) + ' mm · placas ' +
-      n(r.L, 1) + ' × ' + n(r.wpp, 3) + ' m' + (est.alfa_e > 0 ? ' (estrella, α_e ' + n(est.alfa_e, 1) + '°)' : '') +
+      n(r.L, 1) + ' × ' + n(r.wpp, 3) + ' m' + (est.theta > 0 ? ' (estrella, θ ' + n(est.theta, 1) + '°)' : '') +
       ' · malla ' + r.M + ' × ' + r.N + ' por placa'
   ];
 }
@@ -1568,13 +1568,13 @@ function descargarPlanta(){
   var g = geometria(est), lado = 520, ml = 40, mt = 104;
   var ancho = ml + lado + 300, alto = mt + lado + 24;
   var L = lienzoPng(ancho, alto), o = L.o;
-  texto(o, 'Planta del receptor ' + (g.alfa > 0 ? 'en estrella de 8 puntas' : 'octogonal'), ml, 32, 20,
+  texto(o, 'Planta del receptor ' + (g.theta > 0 ? 'en estrella de 8 puntas' : 'octogonal'), ml, 32, 20,
         IMPRESION.tinta, 'left', 600);
   [
     'D ' + n(est.D, 1) + ' m (' + (est.circ ? 'entre vértices' : 'entre caras') + ') · lado del octógono ' +
-      n(g.w, 3) + ' m · α_e ' + n(est.alfa_e, 1) + '° (máximo ' + n(g.max, 1) + '°, picos en el centro)',
+      n(g.w, 3) + ' m · θ ' + n(est.theta, 1) + '° (máximo ' + n(g.max, 1) + '°, picos en el centro)',
     'Lado de la estrella ' + n(g.lado, 3) + ' m · pico interno a ' + n(g.d, 3) + ' m del lado · placa desarrollada ' +
-      n(g.wpp, 3) + ' m · flujo × cos α_e = ' + n(g.cos, 3)
+      n(g.wpp, 3) + ' m · flujo × cos θ = ' + n(g.cos, 3)
   ].forEach(function(t, q){ texto(o, t, ml, 54 + 16 * q, 11.5, IMPRESION.tenue); });
 
   var img = new Image();
@@ -1588,7 +1588,7 @@ function descargarPlanta(){
       o.setLineDash([]);
       texto(o, e[1], lx + 34, ly + 26 * q, 12.5, IMPRESION.tinta);
     });
-    guardarPng(L.cv, g.alfa > 0 ? 'estrella_planta.png' : 'octogono_planta.png');
+    guardarPng(L.cv, g.theta > 0 ? 'estrella_planta.png' : 'octogono_planta.png');
   };
   img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgPlanta(g, {
     fondo: IMPRESION.fondo, relleno: '#F2F2F2', guia: '#8A8A8A', tenue: IMPRESION.tenue,
@@ -1619,7 +1619,7 @@ function filasTabla(r){
   f('Placas del octógono (se resuelven ' + np + ' por simetría)', '--', String(2 * np));
   f('Diámetro del octógono (' + (est.circ ? 'circunscrito' : 'inscrito') + ')', 'm', n(est.D, 1));
   f('Lado del octógono, $w$', 'm', n(r.w, 3));
-  f('Ángulo de la estrella, $\\alpha_e$ (0 = octógono)', '$^\\circ$', nc(est.alfa_e, 1));
+  f('Ángulo de la estrella, $\\theta$ (0 = octógono)', '$^\\circ$', nc(est.theta, 1));
   f('Altura $\\times$ anchura desarrollada de cada placa', 'm', n(r.L, 1) + ' × ' + n(r.wpp, 3));
   f('Área expuesta total', 'm$^2$', n(2 * np * r.L * r.wpp, 1));
   h('Geometría del pillow plate (' + fam + ')');
@@ -1655,7 +1655,7 @@ function filasTabla(r){
   return R;
 }
 function pieTabla(r){
-  var forma = est.alfa_e > 0 ? 'en estrella de 8 puntas ($\\alpha_e = ' + nm(est.alfa_e, 1) + '^\\circ$)' : 'octogonal';
+  var forma = est.theta > 0 ? 'en estrella de 8 puntas ($\\theta = ' + nm(est.theta, 1) + '^\\circ$)' : 'octogonal';
   return 'Resultados del receptor ' + forma + ' de sal solar, con mezcla entre columnas $\\lambda = ' + nm(r.lam, 2) +
     '$. Flujo medio $\\bar q\'\' = ' + nm(est.q_medio, 2) + '$~MW/m$^2$ y máximo $q\'\'_{max} = ' + nm(est.q_pico, 2) +
     '$~MW/m$^2$; sal de ' + n(est.T_ent, 0) + ' a ' + n(est.T_sal, 0) + '~$^\\circ$C; $\\alpha = ' + nm(est.alfa, 2) +
@@ -1700,10 +1700,10 @@ function tablaTex(r){
 }
 
 // Mini-compositor: el subconjunto de LaTeX que usa la tabla, a segmentos
-var GRIEGAS = { '\\delta':'δ', '\\lambda':'λ', '\\alpha':'α', '\\varepsilon':'ε', '\\circ':'°', '\\times':'×' };
+var GRIEGAS = { '\\delta':'δ', '\\lambda':'λ', '\\theta':'θ', '\\alpha':'α', '\\varepsilon':'ε', '\\circ':'°', '\\times':'×' };
 function segmentos(tex){
   tex = tex.replace(/\\bar q/g, 'q\u0304').replace(/''/g, '″').replace(/\\sqrt\{2\}/g, '√2')
-    .replace(/\\(delta|lambda|alpha|varepsilon|circ|times)/g, function(m){ return GRIEGAS[m]; })
+    .replace(/\\(delta|lambda|theta|alpha|varepsilon|circ|times)/g, function(m){ return GRIEGAS[m]; })
     .replace(/\\,/g, '\u2009').replace(/\\%/g, '%').replace(/~/g, '\u00a0').replace(/\{,\}/g, ',')
     .replace(/\\textit\{([^}]*)\}/g, '$1');
   var S = [], mate = false, i = 0, c;
