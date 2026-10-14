@@ -475,7 +475,7 @@ img{max-width:100%}
     </div>
 
     <div class="grupo">
-      <span class="rotulo">Panel pillow plate (Piper)</span>
+      <span class="rotulo" id="rotulo-panel">Panel pillow plate (Piper)</span>
       <div class="mando">
         <div class="mando-cab"><span class="mando-nom">Nusselt del canal interno</span></div>
         <div class="segmentado" id="nusselt" role="group" aria-label="Correlación del Nusselt interno">
@@ -484,7 +484,7 @@ img{max-width:100%}
         </div>
         <span class="nota-panel" id="nota-nusselt"></span>
       </div>
-      <div class="mando">
+      <div class="mando" id="mando-familia">
         <div class="mando-cab"><span class="mando-nom">Celda de soldaduras</span></div>
         <div class="segmentado" id="familia" role="group" aria-label="Familia de celda de M. Piper">
           <button data-familia="longitudinal" aria-pressed="true">Longitudinal</button>
@@ -747,7 +747,7 @@ img{max-width:100%}
               <li>La <strong>salida está impuesta</strong>: el gasto sale del balance global, <i>G</i> = <i>Q</i><sub>útil</sub>/Δ<i>h</i>, iterado porque las pérdidas dependen de la pared.</li>
               <li>Dentro de cada placa, el método de la placa con aire: una porción por celda de soldadura, columnas <strong>adiabáticas</strong> ponderadas en entalpía con la <strong>mezcla completa</strong> mediante <i>λ</i>.</li>
               <li>Coeficiente interno por la ec. (20) con las constantes de Piper, sección de paso de la ec. (16) sin soldaduras de borde y un <strong>único canal</strong> por placa que lleva todo el gasto de la mitad.</li>
-              <li>Con <strong>Sabourishirazi</strong>, el Nusselt pasa a la ec. (8) de Sabourishirazi et al. (2025), Nu = a₁(δ*<sub>ic,max</sub>)<sup>a₂</sup>(d*<sub>ws</sub>)<sup>a₄</sup>(θ**)<sup>a₅</sup>s<sub>R</sub><sup>a₆</sup>Re<sup>b</sup>Pr<sup>0,4</sup>, con las constantes de su tabla 4 para el tipo de canal (2s<sub>L</sub> &gt; s<sub>T</sub> longitudinal, &lt; transversal, = equidistante; la celda «longitudinal» de Piper es un canal transversal en ese artículo). Vale para 1 ≤ Pr ≤ 13 y Re hasta 20 500 (longitudinal) o 10 500. Re, d<sub>e</sub> y la fricción no cambian.</li>
+              <li>Con <strong>Sabourishirazi</strong>, el Nusselt pasa a la ec. (8) de Sabourishirazi et al. (2025), Nu = a₁(δ*<sub>ic,max</sub>)<sup>a₂</sup>(d*<sub>ws</sub>)<sup>a₄</sup>(θ**)<sup>a₅</sup>s<sub>R</sub><sup>a₆</sup>Re<sup>b</sup>Pr<sup>0,4</sup>, con las constantes del canal <strong>longitudinal</strong> de su tabla 4. Los deslizadores del panel quedan dentro de ese canal: 2s<sub>L</sub> &gt; s<sub>T</sub>, los adimensionales de la tabla 6 y las dimensiones de la tabla 3 (la celda «longitudinal» de Piper, 2s<sub>L</sub>/s<sub>T</sub> = 0,58, es un canal transversal en ese artículo y no se ofrece). Vale para 1 200 ≤ Re ≤ 20 500 y 1 ≤ Pr ≤ 13. Re y d<sub>e</sub> no cambian; la fricción sigue siendo la de Piper con su celda de 2s<sub>L</sub> &gt; s<sub>T</sub> (la «transversal»), extrapolada con aviso si la celda se sale de ella.</li>
               <li>Las correlaciones de Piper valen para <strong>1 000 ≤ Re ≤ 8 000</strong> y 1 ≤ Pr ≤ 150, y las ecs. (20)–(21) de Arsenyeva para 9 500 ≤ Re ≤ 30 000. Fuera de esos rangos la página avisa en ámbar y marca Re y Pr en la tira de datos, pero sigue calculando: los resultados son una extrapolación.</li>
               <li>Propiedades de la sal solar (60 % NaNO₃, 40 % KNO₃) por las correlaciones de <strong>Zavoico</strong>, SAND2001-2100, en función de la temperatura. La sal es incompresible.</li>
               <li><strong>Pérdida de carga</strong> por la ec. (19) fila a fila, con zonas de distribución a la entrada y salida de cada placa; la hidrostática se da aparte y casi se anula entre placas que suben y bajan.</li>
@@ -909,6 +909,39 @@ function ajustarPorSt(relacion){
                     redondearRango([f.a[0] * t / 2, f.a[1] * t / 2], 0.05)).toFixed(2);
 }
 
+/* ------------------------------------------------ celda Sabourishirazi -- */
+// Con Sabourishirazi solo vale su canal longitudinal: 2s_L > s_T, tablas 3 y
+// 6 (ROC.sabLongitudinalValida). Las condiciones atan los parametros entre si
+// (theta y s_R a los dos pasos, s_D,eff a los pasos y la soldadura), asi que
+// cada deslizador recorre el tramo valido con los demas fijos: se barre su
+// rejilla desde el valor actual hacia los dos lados mientras siga valido.
+// Si la celda de partida no es valida se usa SAB_DEFECTO: la del PPHE3 con
+// d_sp = 7,5 mm, el minimo de la tabla 3. Todo en mm.
+var SAB_DEFECTO = { s_t:42, s_l:36, b_i:7.0, d_sp:7.5 };
+var SAB_DESLIZ = {
+  s_t:  { paso:0.1,  abs:[ROC.SAB_TABLA_3.sT[0], ROC.SAB_TABLA_3.sT[1]] },
+  s_l:  { paso:0.05, abs:[ROC.SAB_TABLA_3.s2L[0] / 2, ROC.SAB_TABLA_3.s2L[1] / 2] },
+  b_i:  { paso:0.05, abs:ROC.SAB_TABLA_3.dic },
+  d_sp: { paso:0.05, abs:ROC.SAB_TABLA_3.dws }
+};
+function sabValida(e){ return ROC.sabLongitudinalValida(e.s_t, 2 * e.s_l, e.d_sp, e.b_i); }
+function rangoSab(e, clave){
+  var d = SAB_DESLIZ[clave], p = d.paso, g = Object.assign({}, e);
+  var kMin = Math.ceil(d.abs[0] / p - 1e-9), kMax = Math.floor(d.abs[1] / p + 1e-9);
+  function ok(k){ g[clave] = +(k * p).toFixed(2); return sabValida(g); }
+  var k0 = Math.round(e[clave] / p), lo = k0, hi = k0;
+  if (!ok(k0)) return [e[clave], e[clave]];
+  while (lo - 1 >= kMin && ok(lo - 1)) lo--;
+  while (hi + 1 <= kMax && ok(hi + 1)) hi++;
+  return [+(lo * p).toFixed(2), +(hi * p).toFixed(2)];
+}
+function geometriaPanel(e){ return { familia:e.familia, s_t:e.s_t, s_l:e.s_l, b_i:e.b_i, d_sp:e.d_sp }; }
+// Al pasar a Sabourishirazi se guarda la celda de Piper para devolverla al volver
+function entrarSab(){
+  est.celdaPiper = geometriaPanel(est);
+  if (!sabValida(est)) Object.assign(est, SAB_DEFECTO);
+}
+
 /* ---------------------------------------------------------- mandos ------ */
 // Lo que dice el selector del Nusselt: con Sabourishirazi, el tipo de canal
 // que le corresponde a la celda (no coincide con el nombre de Piper) y sus
@@ -925,14 +958,30 @@ function notaNusselt(){
     ' · s_R ' + n(s.s_R, 3) + '. La fricción sigue siendo la de Piper.';
 }
 function pintarMandos(){
-  var rc = rangosCelda(est);
-  [['s_t', rc.sT], ['s_l', rc.sL], ['b_i', rc.b_i], ['d_sp', rc.d_sp]].forEach(function(par){
-    $(par[0]).min = par[1][0]; $(par[0]).max = par[1][1];
-  });
-  var f = rc.familia;
-  $('nota-celda').textContent = 'Piper, ' + f.nombre + ': s₂L/s_T ' + n(f.a[0], 2) + '–' + n(f.a[1], 2) +
-    ' · d_sp/s_T ' + n(f.b[0], 2) + '–' + n(f.b[1], 2) + ' · b_i/s_T ' + n(f.c[0], 3) + '–' + n(f.c[1], 3) +
-    '. s_T llega a ' + S_T_MAX + ' mm y arrastra d_sp, b_i y s_L para seguir en Piper; los demás recorren lo que admiten los otros.';
+  var conSab = est.nusselt === 'sabourishirazi';
+  $('mando-familia').style.display = conSab ? 'none' : '';
+  $('rotulo-panel').textContent = conSab ? 'Panel pillow plate (Sabourishirazi, longitudinal)'
+                                         : 'Panel pillow plate (Piper)';
+  if (conSab){
+    ['s_t', 's_l', 'b_i', 'd_sp'].forEach(function(k){
+      var r = rangoSab(est, k); $(k).min = r[0]; $(k).max = r[1];
+    });
+    var R6 = ROC.SAB_TABLA_4.longitudinal.rangos, T3 = ROC.SAB_TABLA_3;
+    var tramo = function(r, d){ return n(r[0], d) + '–' + n(r[1], d); };
+    $('nota-celda').textContent = 'Sabourishirazi, canal longitudinal (2s_L > s_T). Tabla 6: δ*ic ' +
+      tramo(R6[0], 3) + ' · d*ws ' + tramo(R6[1], 3) + ' · θ** ' + tramo(R6[2], 3) + ' · s_R ' + tramo(R6[3], 2) +
+      '. Tabla 3: 2s_L y s_T ' + tramo(T3.sT, 1) + ' mm · d_sp ' + tramo(T3.dws, 1) + ' mm · b_i ' +
+      tramo(T3.dic, 2) + ' mm · s_D,eff ' + tramo(T3.sDeff, 1) + ' mm. Cada deslizador recorre lo que admiten los demás.';
+  } else {
+    var rc = rangosCelda(est);
+    [['s_t', rc.sT], ['s_l', rc.sL], ['b_i', rc.b_i], ['d_sp', rc.d_sp]].forEach(function(par){
+      $(par[0]).min = par[1][0]; $(par[0]).max = par[1][1];
+    });
+    var f = rc.familia;
+    $('nota-celda').textContent = 'Piper, ' + f.nombre + ': s₂L/s_T ' + n(f.a[0], 2) + '–' + n(f.a[1], 2) +
+      ' · d_sp/s_T ' + n(f.b[0], 2) + '–' + n(f.b[1], 2) + ' · b_i/s_T ' + n(f.c[0], 3) + '–' + n(f.c[1], 3) +
+      '. s_T llega a ' + S_T_MAX + ' mm y arrastra d_sp, b_i y s_L para seguir en Piper; los demás recorren lo que admiten los otros.';
+  }
   Array.prototype.forEach.call($('familia').children, function(b){
     b.setAttribute('aria-pressed', String(b.dataset.familia === est.familia));
   });
@@ -957,7 +1006,7 @@ DESLIZ.forEach(function(k){
   $(k).addEventListener('input', function(){
     var relacion = est.s_l / est.s_t;
     est[k] = parseFloat(this.value);
-    if (k === 's_t') ajustarPorSt(relacion);
+    if (k === 's_t' && est.nusselt !== 'sabourishirazi') ajustarPorSt(relacion);
     marcarPreset(null);
     pintarMandos();
     calcular();
@@ -969,7 +1018,10 @@ $('diametro').addEventListener('click', function(e){
 });
 $('nusselt').addEventListener('click', function(e){
   var b = e.target.closest('button'); if (!b || b.dataset.nusselt === est.nusselt) return;
-  est.nusselt = b.dataset.nusselt; pintarMandos(); calcular();
+  est.nusselt = b.dataset.nusselt;
+  if (est.nusselt === 'sabourishirazi') entrarSab();
+  else if (est.celdaPiper) Object.assign(est, est.celdaPiper);   // La celda de Piper que habia
+  pintarMandos(); calcular();
 });
 $('familia').addEventListener('click', function(e){
   var b = e.target.closest('button'); if (!b) return;
@@ -984,6 +1036,7 @@ $('presets').addEventListener('click', function(e){
   var b = e.target.closest('button'); if (!b) return;
   // El metodo del Nusselt no es parte del caso: se conserva al cambiar de preset
   est = Object.assign({}, PRESETS[b.dataset.preset], { nusselt: est.nusselt });
+  if (est.nusselt === 'sabourishirazi') entrarSab();
   sel = null; marcarPreset(b.dataset.preset); pintarMandos(); calcular();
 });
 function marcarPreset(nombre){
@@ -1897,6 +1950,7 @@ function numeroRango(v){
 function pintarValidez(r){
   var v = r.validez, lista = $('validez-lista');
   lista.innerHTML = v.avisos.map(function(a){
+    if (a.texto) return '<li>' + a.texto + '</li>';
     var pct = a.fraccion >= 0.9995 ? 'en todas las porciones'
       : 'en el ' + n(a.fraccion * 100, a.fraccion < 0.1 ? 1 : 0) + ' % de las porciones';
     var cifras = a.magnitud + ' de ' + numeroRango(a.valor[0]) + ' a ' + numeroRango(a.valor[1]);

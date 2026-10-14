@@ -266,6 +266,41 @@
                      Math.pow(v[2], a[3]) * Math.pow(v[3], a[4]) };
   }
 
+  // Dominio de la ec. (8) para el canal LONGITUDINAL, el unico que admite la
+  // pagina con Sabourishirazi: 2s_L > s_T, los adimensionales de la tabla 6 y
+  // las dimensiones de la tabla 3 (en mm), entre ellas s_D,eff y theta. Las
+  // dependencias entre parametros son las de sus definiciones: theta y s_R
+  // atan los dos pasos, y s_D,eff los pasos con el punto de soldadura.
+  var SAB_TABLA_3 = { s2L: [24.66, 124], sT: [24.66, 124], dws: [7.5, 12.5], dic: [2.66, 10.65],
+                      sDeff: [12.5, 70], theta: [22.26, 67.74] };
+
+  function sabLongitudinalValida(sT, s2L, dsp, b_i) {          // Todo en mm
+    function en(v, r) { return v >= r[0] - 1e-9 && v <= r[1] + 1e-9; }
+    var T3 = SAB_TABLA_3, R6 = SAB_TABLA_4.longitudinal.rangos;
+    if (!(s2L > sT) || !en(s2L, T3.s2L) || !en(sT, T3.sT) || !en(dsp, T3.dws) || !en(b_i, T3.dic)) {
+      return false;
+    }
+    var sDeff = Math.sqrt(sT * sT / 4 + s2L * s2L / 4) - dsp;
+    var theta = Math.atan(sT / s2L) * 180 / Math.PI;
+    return en(sDeff, T3.sDeff) && en(theta, T3.theta) &&
+      en(b_i / sDeff, R6[0]) && en(dsp / sDeff, R6[1]) && en(theta / 90, R6[2]) &&
+      en((s2L - dsp) / (sT - dsp), R6[3]);
+  }
+
+  // Friccion con Sabourishirazi: la geometria ya no esta atada a las familias
+  // de Piper, pero la friccion sigue siendo la suya. Se toma la familia con
+  // 2s_L > s_T (la "celda transversal" de Piper, 2s_L/s_T = 1,71) y se avisa si
+  // la celda se sale de sus rangos, porque entonces se extrapola
+  function friccionPiperLongitudinal(sT, s2L, dsp, h) {
+    var f = FAMILIAS[2], a = s2L / sT, b = dsp / sT, c = h / sT;
+    var n = f.constantes(b, c);
+    n.familia = 'canal longitudinal';
+    n.id = 'sab-longitudinal';
+    n.friccion = { familia: f.nombre, dentro: dentro(a, f.a) && dentro(b, f.b) && dentro(c, f.c),
+                   a: a, b: b, c: c, rangos: { a: f.a, b: f.b, c: f.c } };
+    return n;
+  }
+
   function deI(b_i) { return 2.0 * (b_i / Math.SQRT2); }                        // Ec. (14)
   function fChI(b_i, w_pp, w_e) { return (b_i / Math.SQRT2) * (w_pp - 2 * w_e); } // Ec. (16)
 
@@ -378,12 +413,20 @@
     var M = Math.max(redondeoPython(wpp / panel.s_t), 1);
     var N = Math.max(redondeoPython(L / panel.s_2l), 1);
     var fracSoldadura = 2 * (Math.PI * panel.d_sp * panel.d_sp / 4) / (panel.s_t * panel.s_2l);
-    var n = asignacionDeConstantes(panel.s_t, panel.s_2l, panel.d_sp, panel.b_i);
-    // Nusselt interno: Piper (ec. 20) o Sabourishirazi (ec. 8). La friccion
-    // sigue siendo la de Piper en los dos casos
+    // Nusselt interno: Piper (ec. 20) o Sabourishirazi (ec. 8), este solo para
+    // el canal longitudinal. La friccion sigue siendo la de Piper en los dos
     var metodo = cfg.nusselt === 'sabourishirazi' ? 'sabourishirazi' : 'piper';
-    var sab = metodo === 'sabourishirazi'
-      ? parametrosSabourishirazi(panel.s_t, panel.s_2l, panel.d_sp, panel.b_i) : null;
+    var n, sab = null;
+    if (metodo === 'sabourishirazi') {
+      if (!sabLongitudinalValida(panel.s_t * 1e3, panel.s_2l * 1e3, panel.d_sp * 1e3, panel.b_i * 1e3)) {
+        throw new ErrorModelo('La geometría queda fuera del canal longitudinal de Sabourishirazi ' +
+                              '(2s_L > s_T, tablas 3 y 6).', 'Mueve los pasos o la soldadura.');
+      }
+      sab = parametrosSabourishirazi(panel.s_t, panel.s_2l, panel.d_sp, panel.b_i);
+      n = friccionPiperLongitudinal(panel.s_t, panel.s_2l, panel.d_sp, panel.b_i);
+    } else {
+      n = asignacionDeConstantes(panel.s_t, panel.s_2l, panel.d_sp, panel.b_i);
+    }
     var seccion = fChI(panel.b_i, wpp, 0.0);         // Ec. (16), w_e = 0
     var de = deI(panel.b_i);                          // Ec. (14)
     var e = panel.delta_pp;
@@ -604,7 +647,7 @@
     res.salida = hInterno(cfg.T_sal, G);
     res.rhoMedia = 0.5 * (rho(cfg.T_ent) + rho(cfg.T_sal));
     res.potenciaBombeo = G * res.dp / res.rhoMedia;              // de la mitad [W]
-    res.validez = validez(placas, M * N * nPl, sab);
+    res.validez = validez(placas, M * N * nPl, sab, n);
 
     // Campos del receptor desarrollado, N filas x (nPl*M) columnas
     var campos = { flujo: [], sal: [], pared: [], pelicula: [] }, j, i, k2;
@@ -656,7 +699,7 @@
   // Junta lo de las cuatro placas y redacta un aviso por cada rango que se
   // incumple. No para el calculo: el modelo sigue dando numeros, pero con Nu y
   // f extrapolados, y eso hay que saberlo al leerlos.
-  function validez(placas, total, sab) {
+  function validez(placas, total, sab, n) {
     var v = { Re: [Infinity, -Infinity], Pr: [Infinity, -Infinity],
               fueraPiperRe: 0, fueraPiperPr: 0, fueraArsenyevaRe: 0, fueraSabRe: 0, fueraSabPr: 0 };
     placas.forEach(function (p) {
@@ -693,6 +736,16 @@
           rango: g.rango, valor: [g.valor, g.valor], fraccion: 1, sentido: sentido([g.valor, g.valor], g.rango),
           ecuaciones: ecSab.replace('tabla 4', 'tabla 6'), afecta: 'h' });
       });
+      var fr = n && n.friccion;
+      if (fr && !fr.dentro) {
+        var cifra = function (x) { return x.toFixed(3).replace('.', ','); };
+        avisos.push({ clave: 'piperCelda', grave: true, texto: '<strong>Celda fuera de la familia «' + fr.familia +
+          '» de ' + RANGOS.piper.nombre + '</strong>, la que da la fricción (s₂L/s_T ' + cifra(fr.a) + ', d_sp/s_T ' + cifra(fr.b) +
+          ', b_i/s_T ' + cifra(fr.c) + '; admite ' + cifra(fr.rangos.a[0]) + '–' + cifra(fr.rangos.a[1]) +
+          ', ' + cifra(fr.rangos.b[0]) + '–' + cifra(fr.rangos.b[1]) + ' y ' + cifra(fr.rangos.c[0]) + '–' +
+          cifra(fr.rangos.c[1]) + '). Esto supone extrapolar las constantes n₁ y n₂ de la fricción, ' +
+          'y con ellas la pérdida de carga. El Nusselt de Sabourishirazi no se ve afectado.' });
+      }
     }
     if (v.fueraPiperRe > 0) {
       avisos.push({ clave: 'piperRe', grave: true, fuente: RANGOS.piper.nombre,
@@ -719,7 +772,8 @@
     LIMITE_AISI321: LIMITE_AISI321, T_PELICULA_MAX: T_PELICULA_MAX, K_ACERO: K_ACERO,
     ZETA_DZ: ZETA_DZ, N_PLACAS: N_PLACAS, THETA_ESTRELLA_MAX: THETA_ESTRELLA_MAX, LAMBDA: 0.7, SAL: SAL,
     ErrorModelo: ErrorModelo, FAMILIAS: FAMILIAS, SAB_TABLA_4: SAB_TABLA_4,
-    parametrosSabourishirazi: parametrosSabourishirazi,
+    parametrosSabourishirazi: parametrosSabourishirazi, SAB_TABLA_3: SAB_TABLA_3,
+    sabLongitudinalValida: sabLongitudinalValida,
     asignacionDeConstantes: asignacionDeConstantes, propiedades: propiedades,
     entalpia: entalpia, TdesdeH: TdesdeH, mapaDesdeMedioYPico: mapaDesdeMedioYPico,
     resolver: resolver
