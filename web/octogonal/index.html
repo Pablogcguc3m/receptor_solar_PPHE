@@ -477,6 +477,14 @@ img{max-width:100%}
     <div class="grupo">
       <span class="rotulo">Panel pillow plate (Piper)</span>
       <div class="mando">
+        <div class="mando-cab"><span class="mando-nom">Nusselt del canal interno</span></div>
+        <div class="segmentado" id="nusselt" role="group" aria-label="Correlación del Nusselt interno">
+          <button data-nusselt="piper" aria-pressed="true">Piper</button>
+          <button data-nusselt="sabourishirazi" aria-pressed="false">Sabourishirazi</button>
+        </div>
+        <span class="nota-panel" id="nota-nusselt"></span>
+      </div>
+      <div class="mando">
         <div class="mando-cab"><span class="mando-nom">Celda de soldaduras</span></div>
         <div class="segmentado" id="familia" role="group" aria-label="Familia de celda de M. Piper">
           <button data-familia="longitudinal" aria-pressed="true">Longitudinal</button>
@@ -570,6 +578,7 @@ img{max-width:100%}
         <div class="dato"><span class="k">h interno</span><span class="v"><span id="d-h">–</span> <span class="u">kW/m²K</span></span></div>
         <div class="dato"><span class="k">Malla por placa</span><span class="v"><span id="d-malla">–</span></span></div>
         <div class="dato"><span class="k">Celda</span><span class="v"><span id="d-celda">–</span></span></div>
+        <div class="dato"><span class="k">Nusselt</span><span class="v"><span id="d-nu">–</span></span></div>
         <div class="dato"><span class="k">Sección</span><span class="v"><span id="d-sec">–</span> <span class="u">cm²</span></span></div>
         <div class="dato"><span class="k">d<sub>e</sub></span><span class="v"><span id="d-de">–</span> <span class="u">mm</span></span></div>
         <div class="dato"><span class="k">Soldaduras</span><span class="v"><span id="d-sold">–</span> <span class="u">% del área</span></span></div>
@@ -738,6 +747,7 @@ img{max-width:100%}
               <li>La <strong>salida está impuesta</strong>: el gasto sale del balance global, <i>G</i> = <i>Q</i><sub>útil</sub>/Δ<i>h</i>, iterado porque las pérdidas dependen de la pared.</li>
               <li>Dentro de cada placa, el método de la placa con aire: una porción por celda de soldadura, columnas <strong>adiabáticas</strong> ponderadas en entalpía con la <strong>mezcla completa</strong> mediante <i>λ</i>.</li>
               <li>Coeficiente interno por la ec. (20) con las constantes de Piper, sección de paso de la ec. (16) sin soldaduras de borde y un <strong>único canal</strong> por placa que lleva todo el gasto de la mitad.</li>
+              <li>Con <strong>Sabourishirazi</strong>, el Nusselt pasa a la ec. (8) de Sabourishirazi et al. (2025), Nu = a₁(δ*<sub>ic,max</sub>)<sup>a₂</sup>(d*<sub>ws</sub>)<sup>a₄</sup>(θ**)<sup>a₅</sup>s<sub>R</sub><sup>a₆</sup>Re<sup>b</sup>Pr<sup>0,4</sup>, con las constantes de su tabla 4 para el tipo de canal (2s<sub>L</sub> &gt; s<sub>T</sub> longitudinal, &lt; transversal, = equidistante; la celda «longitudinal» de Piper es un canal transversal en ese artículo). Vale para 1 ≤ Pr ≤ 13 y Re hasta 20 500 (longitudinal) o 10 500. Re, d<sub>e</sub> y la fricción no cambian.</li>
               <li>Las correlaciones de Piper valen para <strong>1 000 ≤ Re ≤ 8 000</strong> y 1 ≤ Pr ≤ 150, y las ecs. (20)–(21) de Arsenyeva para 9 500 ≤ Re ≤ 30 000. Fuera de esos rangos la página avisa en ámbar y marca Re y Pr en la tira de datos, pero sigue calculando: los resultados son una extrapolación.</li>
               <li>Propiedades de la sal solar (60 % NaNO₃, 40 % KNO₃) por las correlaciones de <strong>Zavoico</strong>, SAND2001-2100, en función de la temperatura. La sal es incompresible.</li>
               <li><strong>Pérdida de carga</strong> por la ec. (19) fila a fila, con zonas de distribución a la entrada y salida de cada placa; la hidrostática se da aparte y casi se anula entre placas que suben y bajan.</li>
@@ -753,7 +763,7 @@ img{max-width:100%}
       con lo que usa de <span style="color:var(--ink-2)">receptor.py</span>, <span style="color:var(--ink-2)">props_fluido.py</span>
       y <span style="color:var(--ink-2)">modelo_termohidraulico/{formulas, asignacion}.py</span>.
       Mismas ecuaciones y el mismo resolvedor (Newton con salvaguarda); reproduce el modelo en Python a 10⁻¹⁰ K en todas las porciones.
-      Sal solar según Zavoico (SAND2001-2100); Nu y factor de fricción del canal interno por las ecs. (18) y (20) de O. Arsenyeva et al. con las constantes de M. Piper.
+      Sal solar según Zavoico (SAND2001-2100); Nu y factor de fricción del canal interno por las ecs. (18) y (20) de O. Arsenyeva et al. con las constantes de M. Piper; Nu alternativo por la ec. (8) de A. Sabourishirazi et al., Int. J. Heat Mass Transf. 251 (2025) 127421.
     </p>
   </main>
 </div>
@@ -824,7 +834,8 @@ function gradienteCss(fn){
 /* ---------------------------------------------------------- estado ------ */
 var BASE = { q_medio:0.8, q_pico:1.2, altura:10.5, D:8.5, circ:true, theta:0, lam:ROC.LAMBDA,
              T_ent:290, T_sal:565, alfa:1, eps:0.85, h_ext:20,
-             familia:'longitudinal', s_t:72, s_l:21, b_i:3.4, d_sp:7.2, delta_pp:0.8 };
+             familia:'longitudinal', s_t:72, s_l:21, b_i:3.4, d_sp:7.2, delta_pp:0.8,
+             nusselt:'piper' };
 var PRESETS = {
   base: BASE,
   pyromark: Object.assign({}, BASE, { alfa:0.95 }),
@@ -899,6 +910,20 @@ function ajustarPorSt(relacion){
 }
 
 /* ---------------------------------------------------------- mandos ------ */
+// Lo que dice el selector del Nusselt: con Sabourishirazi, el tipo de canal
+// que le corresponde a la celda (no coincide con el nombre de Piper) y sus
+// cuatro adimensionales
+function notaNusselt(){
+  if (est.nusselt !== 'sabourishirazi')
+    return 'Piper: Nu = n₃ Re^n₄ Pr^0,4, constantes de la familia de celda.';
+  var s;
+  try { s = ROC.parametrosSabourishirazi(est.s_t, 2 * est.s_l, est.d_sp, est.b_i); }
+  catch (err){ return err.message; }
+  return 'Sabourishirazi (2025), ec. (8), canal ' + s.tipo + ' (2s_L ' +
+    (s.tipo === 'longitudinal' ? '>' : s.tipo === 'transversal' ? '<' : '=') + ' s_T): ' +
+    'δ*ic ' + n(s.d_ic, 3) + ' · d*ws ' + n(s.d_ws, 3) + ' · θ** ' + n(s.theta2, 3) +
+    ' · s_R ' + n(s.s_R, 3) + '. La fricción sigue siendo la de Piper.';
+}
 function pintarMandos(){
   var rc = rangosCelda(est);
   [['s_t', rc.sT], ['s_l', rc.sL], ['b_i', rc.b_i], ['d_sp', rc.d_sp]].forEach(function(par){
@@ -911,6 +936,10 @@ function pintarMandos(){
   Array.prototype.forEach.call($('familia').children, function(b){
     b.setAttribute('aria-pressed', String(b.dataset.familia === est.familia));
   });
+  Array.prototype.forEach.call($('nusselt').children, function(b){
+    b.setAttribute('aria-pressed', String(b.dataset.nusselt === est.nusselt));
+  });
+  $('nota-nusselt').textContent = notaNusselt();
   Array.prototype.forEach.call($('diametro').children, function(b){
     b.setAttribute('aria-pressed', String((b.dataset.circ === '1') === est.circ));
   });
@@ -938,6 +967,10 @@ $('diametro').addEventListener('click', function(e){
   var b = e.target.closest('button'); if (!b) return;
   est.circ = b.dataset.circ === '1'; marcarPreset(null); pintarMandos(); calcular();
 });
+$('nusselt').addEventListener('click', function(e){
+  var b = e.target.closest('button'); if (!b || b.dataset.nusselt === est.nusselt) return;
+  est.nusselt = b.dataset.nusselt; pintarMandos(); calcular();
+});
 $('familia').addEventListener('click', function(e){
   var b = e.target.closest('button'); if (!b) return;
   if (b.dataset.familia === est.familia) return;
@@ -949,7 +982,8 @@ $('familia').addEventListener('click', function(e){
 });
 $('presets').addEventListener('click', function(e){
   var b = e.target.closest('button'); if (!b) return;
-  est = Object.assign({}, PRESETS[b.dataset.preset]);
+  // El metodo del Nusselt no es parte del caso: se conserva al cambiar de preset
+  est = Object.assign({}, PRESETS[b.dataset.preset], { nusselt: est.nusselt });
   sel = null; marcarPreset(b.dataset.preset); pintarMandos(); calcular();
 });
 function marcarPreset(nombre){
@@ -1075,7 +1109,7 @@ function calcular(){
       T_ent: est.T_ent + C, T_sal: est.T_sal + C, lam: est.lam,
       s_t: est.s_t / 1000, s_2l: 2 * est.s_l / 1000, b_i: est.b_i / 1000,
       d_sp: est.d_sp / 1000, delta_pp: est.delta_pp / 1000,
-      h_ext: est.h_ext, eps: est.eps, alfa: est.alfa
+      h_ext: est.h_ext, eps: est.eps, alfa: est.alfa, nusselt: est.nusselt
     };
     var r;
     try { r = ROC.resolver(cfg); }
@@ -1403,7 +1437,8 @@ function puntoDeTrabajo(r){
       ' × ' + n(r.panel.s_2l * 1e3, 1) + ' mm · b_i ' + n(r.panel.b_i * 1e3, 2) + ' mm · d_sp ' +
       n(r.panel.d_sp * 1e3, 2) + ' mm · δ ' + n(r.panel.delta_pp * 1e3, 2) + ' mm · placas ' +
       n(r.L, 1) + ' × ' + n(r.wpp, 3) + ' m' + (est.theta > 0 ? ' (estrella, θ ' + n(est.theta, 1) + '°)' : '') +
-      ' · malla ' + r.M + ' × ' + r.N + ' por placa'
+      ' · malla ' + r.M + ' × ' + r.N + ' por placa · Nu ' +
+      (r.sab ? 'Sabourishirazi (' + r.sab.tipo + ')' : 'Piper')
   ];
 }
 function guardarPng(cv, nombre){
@@ -1642,6 +1677,7 @@ function filasTabla(r){
   h('Canal interno (entrada / salida)');
   f('Velocidad', 'm/s', n(r.entrada.u, 1) + ' / ' + n(r.salida.u, 1));
   f('Número de Reynolds', '$10^3$', n(r.validez.Re[0] / 1e3, 1) + ' / ' + n(r.validez.Re[1] / 1e3, 1));
+  f('Correlación del Nusselt interno', '--', r.sab ? 'Sabourishirazi (' + r.sab.tipo + ')' : 'Piper');
   f('Coef. de convección interno', 'kW/(m$^2$\\,K)', n(r.entrada.h / 1e3, 1) + ' / ' + n(r.salida.h / 1e3, 1));
   h('Hidráulica (' + np + ' placas en serie)');
   f('Pérdida de carga', 'MPa', n(r.dp / 1e6, 2));
@@ -1865,24 +1901,31 @@ function pintarValidez(r){
       : 'en el ' + n(a.fraccion * 100, a.fraccion < 0.1 ? 1 : 0) + ' % de las porciones';
     var cifras = a.magnitud + ' de ' + numeroRango(a.valor[0]) + ' a ' + numeroRango(a.valor[1]);
     var rango = numeroRango(a.rango[0]) + '–' + numeroRango(a.rango[1]);
+    if (a.geometria){
+      return '<li><strong>' + a.magnitud + ' fuera del rango de ' + a.fuente + '</strong> (' +
+        n(a.rango[0], 4) + '–' + n(a.rango[1], 4) + '): la celda da ' + n(a.valor[0], 4) +
+        '. Esto supone extrapolar ' + a.ecuaciones + ', y con ello h.</li>';
+    }
     if (a.grave){
       var donde = a.sentido === 'en parte fuera' ? 'fuera del rango ' : a.sentido + ' del rango ';
       return '<li><strong>' + a.magnitud + ' fuera del rango de ' + a.fuente + '</strong> (' + rango +
         '): el canal trabaja con ' + cifras + ', ' + donde + pct + '. ' +
-        'Se están extrapolando la ' + a.ecuaciones + ', y con ellas h y la pérdida de carga.</li>';
+        'Esto supone extrapolar ' + a.ecuaciones + ', y con ello ' + a.afecta + '.</li>';
     }
     return '<li>Fuera también del rango de ' + a.fuente + ' (' + a.magnitud + ' ' + rango + ', ' +
       a.ecuaciones + ') ' + pct + '.</li>';
   }).join('');
   $('validez').dataset.visible = v.avisos.length ? '1' : '0';
 
-  var P = ROC.RANGOS.piper;
-  var reFuera = v.fueraPiperRe > 0, prFuera = v.fueraPiperPr > 0;
+  var P = ROC.RANGOS.piper, S = ROC.RANGOS.sabourishirazi, s = r.sab;
+  var reFuera = v.fueraPiperRe > 0 || v.fueraSabRe > 0, prFuera = v.fueraPiperPr > 0 || v.fueraSabPr > 0;
   $('dato-re').classList.toggle('fuera', reFuera);
   $('dato-pr').classList.toggle('fuera', prFuera);
   $('dato-re').title = 'Rango de Piper: ' + numeroRango(P.Re[0]) + '–' + numeroRango(P.Re[1]) +
+    (s ? ' · Sabourishirazi (' + s.tipo + '): ' + numeroRango(s.Re[0]) + '–' + numeroRango(s.Re[1]) : '') +
     (reFuera ? ' · fuera' : ' · dentro');
   $('dato-pr').title = 'Rango de Piper: ' + n(P.Pr[0], 0) + '–' + n(P.Pr[1], 0) +
+    (s ? ' · Sabourishirazi: ' + n(S.Pr[0], 0) + '–' + n(S.Pr[1], 0) : '') +
     (prFuera ? ' · fuera' : ' · dentro');
 }
 
@@ -1919,6 +1962,7 @@ function pintar(r){
   $('d-h').textContent = n(r.entrada.h / 1e3, 1) + ' → ' + n(r.salida.h / 1e3, 1);
   $('d-malla').textContent = r.M + ' × ' + r.N;
   $('d-celda').textContent = r.n.familia.replace('celda ', '');
+  $('d-nu').textContent = r.sab ? 'Sabourishirazi · ' + r.sab.tipo : 'Piper';
   $('d-sec').textContent = n(r.seccion * 1e4, 1);
   $('d-de').textContent = n(r.de * 1e3, 2);
   $('d-sold').textContent = n(r.fracSoldadura * 100, 2);

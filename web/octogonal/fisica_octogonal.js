@@ -13,6 +13,11 @@
  * Incluye la estrella de 8 puntas (cfg.theta_estrella): placas dobladas de
  * ancho w/cos(theta) con flujo cos(theta)*q'', como en el original.
  *
+ * cfg.nusselt elige el Nusselt del canal interno: 'piper' (ec. 20 con las
+ * constantes de asignacion.py, el de receptor_octogonal.py) o
+ * 'sabourishirazi' (ec. 8 de Sabourishirazi et al. 2025, el de
+ * receptor_octogonal_sabourishirazi.py). Todo lo demas es comun.
+ *
  * Todo en SI y las temperaturas en KELVIN, como en el original.
  */
 (function (global) {
@@ -94,7 +99,11 @@
     piper: { nombre: 'Piper et al. (2017)', Re: [1000, 8000], Pr: [1, 150],
              ecuaciones: 'fricción y el Nusselt del canal interno (ecs. 2 y 6, tablas 2 y 3)' },
     arsenyeva: { nombre: 'Arsenyeva et al. (2019)', Re: [9500, 30000], Pr: null,
-                 ecuaciones: 'ecs. (20) y (21)' }
+                 ecuaciones: 'ecs. (20) y (21)' },
+    // A. Sabourishirazi et al., Int. J. Heat Mass Transf. 251 (2025) 127421,
+    // ec. (8) y tablas 4 y 6. El Re depende del tipo de canal (ver SAB_TABLA_4)
+    sabourishirazi: { nombre: 'Sabourishirazi et al. (2025)', Re: null, Pr: [1, 13],
+                      ecuaciones: 'Nusselt del canal interno (ec. 8, tabla 4)' }
   };
 
   // round() de Python: los empates van al PAR (262.5 -> 262), no hacia arriba
@@ -216,6 +225,47 @@
       'Elige otra combinación de pasos.');
   }
 
+  // ===========================================================================
+  // Nusselt interno de Sabourishirazi (receptor_octogonal_sabourishirazi.py)
+  // ===========================================================================
+  //   Nu = a1 (d*_ic,max)^a2 (d*_ws)^a4 (theta**)^a5 (s_R)^a6 Re^b Pr^0.4
+  // con s_D,eff = sqrt((s_T/2)^2 + s_L^2) - d_ws, d*_ic,max = b_i/s_D,eff,
+  // d*_ws = d_sp/s_D,eff, theta** = atan(s_T/2s_L)/90 y
+  // s_R = (2s_L - d_ws)/(s_T - d_ws). Tipo de canal segun los pasos: 2s_L > s_T
+  // longitudinal, < transversal, = equidistante. OJO: la "celda longitudinal"
+  // de Piper (2s_L/s_T = 0,58) es un canal TRANSVERSAL aqui, y al reves.
+
+  var SAB_TABLA_4 = {
+    longitudinal: { a: [0.0465, 0.3765, -0.0898, 0.3989, 0.5984, 0.8549], Re: [1200, 20500],
+      rangos: [[0.0869, 0.2702], [0.2182, 0.625], [0.2473, 0.4229], [1.3240, 3.9173]] },
+    transversal: { a: [0.3947, 0.3867, 0.1339, 1.9544, 0.9653, 0.7703], Re: [1000, 10500],
+      rangos: [[0.0869, 0.2702], [0.2182, 0.625], [0.5771, 0.7527], [0.2553, 0.7553]] },
+    equidistante: { a: [0.0750, 0.3078, 0.1737, 0, 0, 0.8052], Re: [1000, 10500],
+      rangos: [[0.0749, 0.3447], [0.1071, 1.0], null, null] }
+  };
+  var SAB_NOMBRES = ['d*ic,max', 'd*ws', 'θ**', 's_R'];
+
+  function parametrosSabourishirazi(sT, s2L, dsp, b_i) {
+    var sDeff = Math.sqrt(sT * sT / 4 + s2L * s2L / 4) - dsp;
+    if (!(sDeff > 0)) {
+      throw new ErrorModelo('El punto de soldadura no cabe en el paso diagonal (s_D ≤ d_sp).', '');
+    }
+    var theta = Math.atan(sT / s2L) * 180 / Math.PI, rel = s2L / sT;
+    var tipo = Math.abs(rel - 1) <= 0.01 ? 'equidistante' : rel > 1 ? 'longitudinal' : 'transversal';
+    var fila = SAB_TABLA_4[tipo];
+    var v = [b_i / sDeff, dsp / sDeff, theta / 90, (s2L - dsp) / (sT - dsp)];
+    var fuera = [];
+    for (var k = 0; k < 4; k++) {
+      var r = fila.rangos[k];
+      if (r && !(v[k] >= r[0] && v[k] <= r[1])) fuera.push({ nombre: SAB_NOMBRES[k], valor: v[k], rango: r });
+    }
+    var a = fila.a;
+    return { tipo: tipo, sDeff: sDeff, theta: theta, d_ic: v[0], d_ws: v[1], theta2: v[2], s_R: v[3],
+             a: a, b: a[5], Re: fila.Re, fuera: fuera,
+             factor: a[0] * Math.pow(v[0], a[1]) * Math.pow(v[1], a[2]) *
+                     Math.pow(v[2], a[3]) * Math.pow(v[3], a[4]) };
+  }
+
   function deI(b_i) { return 2.0 * (b_i / Math.SQRT2); }                        // Ec. (14)
   function fChI(b_i, w_pp, w_e) { return (b_i / Math.SQRT2) * (w_pp - 2 * w_e); } // Ec. (16)
 
@@ -329,6 +379,11 @@
     var N = Math.max(redondeoPython(L / panel.s_2l), 1);
     var fracSoldadura = 2 * (Math.PI * panel.d_sp * panel.d_sp / 4) / (panel.s_t * panel.s_2l);
     var n = asignacionDeConstantes(panel.s_t, panel.s_2l, panel.d_sp, panel.b_i);
+    // Nusselt interno: Piper (ec. 20) o Sabourishirazi (ec. 8). La friccion
+    // sigue siendo la de Piper en los dos casos
+    var metodo = cfg.nusselt === 'sabourishirazi' ? 'sabourishirazi' : 'piper';
+    var sab = metodo === 'sabourishirazi'
+      ? parametrosSabourishirazi(panel.s_t, panel.s_2l, panel.d_sp, panel.b_i) : null;
     var seccion = fChI(panel.b_i, wpp, 0.0);         // Ec. (16), w_e = 0
     var de = deI(panel.b_i);                          // Ec. (14)
     var e = panel.delta_pp;
@@ -348,7 +403,8 @@
       var pr = propiedades(T);
       var u = G / (pr.rho * seccion);
       var Re = pr.rho * u * de / pr.mu;
-      var Nu = n.n3 * Math.pow(Re, n.n4) * Math.pow(pr.Pr, n.n5);
+      var Nu = sab ? sab.factor * Math.pow(Re, sab.b) * Math.pow(pr.Pr, 0.4)
+                   : n.n3 * Math.pow(Re, n.n4) * Math.pow(pr.Pr, n.n5);
       return { h: Nu * pr.k / de, u: u, Re: Re, Pr: pr.Pr };
     }
 
@@ -444,7 +500,8 @@
       var fr = 0, di = 0, ac = 0, hi = 0;
       // Validez: Re y Pr de cada porcion frente a los rangos de las correlaciones
       var val = { Re: [Infinity, -Infinity], Pr: [Infinity, -Infinity],
-                  fueraPiperRe: 0, fueraPiperPr: 0, fueraArsenyevaRe: 0 };
+                  fueraPiperRe: 0, fueraPiperPr: 0, fueraArsenyevaRe: 0,
+                  fueraSabRe: 0, fueraSabPr: 0 };
       for (i = 0; i < M; i++) {
         var frI = 0, hiI = 0;
         for (j = 0; j < N; j++) {
@@ -460,6 +517,10 @@
           if (Re < RANGOS.piper.Re[0] || Re > RANGOS.piper.Re[1]) val.fueraPiperRe++;
           if (pr.Pr < RANGOS.piper.Pr[0] || pr.Pr > RANGOS.piper.Pr[1]) val.fueraPiperPr++;
           if (Re < RANGOS.arsenyeva.Re[0] || Re > RANGOS.arsenyeva.Re[1]) val.fueraArsenyevaRe++;
+          if (sab) {
+            if (Re < sab.Re[0] || Re > sab.Re[1]) val.fueraSabRe++;
+            if (pr.Pr < RANGOS.sabourishirazi.Pr[0] || pr.Pr > RANGOS.sabourishirazi.Pr[1]) val.fueraSabPr++;
+          }
         }
         var v_ent = 1.0 / rho(entradas[sube ? 0 : N - 1][i]);
         var v_sal = 1.0 / rho(T[i]);
@@ -529,6 +590,7 @@
       mapa: mapa, w: w, wpp: wpp, thetaEstrella: theta, L: L, W: nPl * wpp, nPlacas: nPl,
       M: M, N: N, dy: dy, dx: wpp / M,
       A_celda: A, A_f: A_f, fracSoldadura: fracSoldadura, n: n, panel: panel,
+      metodo: metodo, sab: sab,
       seccion: seccion, de: de, lam: lam, alfa: alfa, G: G, iteraciones: iteraciones,
       placas: placas, T_ent: cfg.T_ent, T_sal: placas[nPl - 1].T_sal
     };
@@ -542,7 +604,7 @@
     res.salida = hInterno(cfg.T_sal, G);
     res.rhoMedia = 0.5 * (rho(cfg.T_ent) + rho(cfg.T_sal));
     res.potenciaBombeo = G * res.dp / res.rhoMedia;              // de la mitad [W]
-    res.validez = validez(placas, M * N * nPl);
+    res.validez = validez(placas, M * N * nPl, sab);
 
     // Campos del receptor desarrollado, N filas x (nPl*M) columnas
     var campos = { flujo: [], sal: [], pared: [], pelicula: [] }, j, i, k2;
@@ -594,31 +656,53 @@
   // Junta lo de las cuatro placas y redacta un aviso por cada rango que se
   // incumple. No para el calculo: el modelo sigue dando numeros, pero con Nu y
   // f extrapolados, y eso hay que saberlo al leerlos.
-  function validez(placas, total) {
+  function validez(placas, total, sab) {
     var v = { Re: [Infinity, -Infinity], Pr: [Infinity, -Infinity],
-              fueraPiperRe: 0, fueraPiperPr: 0, fueraArsenyevaRe: 0 };
+              fueraPiperRe: 0, fueraPiperPr: 0, fueraArsenyevaRe: 0, fueraSabRe: 0, fueraSabPr: 0 };
     placas.forEach(function (p) {
       var w = p.validez;
       v.Re[0] = Math.min(v.Re[0], w.Re[0]); v.Re[1] = Math.max(v.Re[1], w.Re[1]);
       v.Pr[0] = Math.min(v.Pr[0], w.Pr[0]); v.Pr[1] = Math.max(v.Pr[1], w.Pr[1]);
       v.fueraPiperRe += w.fueraPiperRe; v.fueraPiperPr += w.fueraPiperPr;
       v.fueraArsenyevaRe += w.fueraArsenyevaRe;
+      v.fueraSabRe += w.fueraSabRe; v.fueraSabPr += w.fueraSabPr;
     });
     v.fueraPiperRe /= total; v.fueraPiperPr /= total; v.fueraArsenyevaRe /= total;
+    v.fueraSabRe /= total; v.fueraSabPr /= total;
 
     var avisos = [];
     function sentido(valor, rango) {
       return valor[0] > rango[1] ? 'por encima' : valor[1] < rango[0] ? 'por debajo' : 'en parte fuera';
     }
+    // Con Sabourishirazi, de Piper solo queda la friccion
+    var ecPiper = sab ? 'la fricción del canal interno (ec. 2, tabla 2)' : 'la ' + RANGOS.piper.ecuaciones;
+    var afPiper = sab ? 'la pérdida de carga' : 'h y la pérdida de carga';
+    if (sab) {
+      var S = RANGOS.sabourishirazi;
+      var ecSab = 'el ' + S.ecuaciones.replace('canal interno', 'canal interno ' + sab.tipo);
+      if (v.fueraSabRe > 0) {
+        avisos.push({ clave: 'sabRe', grave: true, fuente: S.nombre, magnitud: 'Re', rango: sab.Re,
+          valor: v.Re, fraccion: v.fueraSabRe, sentido: sentido(v.Re, sab.Re), ecuaciones: ecSab, afecta: 'h' });
+      }
+      if (v.fueraSabPr > 0) {
+        avisos.push({ clave: 'sabPr', grave: true, fuente: S.nombre, magnitud: 'Pr', rango: S.Pr,
+          valor: v.Pr, fraccion: v.fueraSabPr, sentido: sentido(v.Pr, S.Pr), ecuaciones: ecSab, afecta: 'h' });
+      }
+      sab.fuera.forEach(function (g) {
+        avisos.push({ clave: 'sabGeo', grave: true, geometria: true, fuente: S.nombre, magnitud: g.nombre,
+          rango: g.rango, valor: [g.valor, g.valor], fraccion: 1, sentido: sentido([g.valor, g.valor], g.rango),
+          ecuaciones: ecSab.replace('tabla 4', 'tabla 6'), afecta: 'h' });
+      });
+    }
     if (v.fueraPiperRe > 0) {
       avisos.push({ clave: 'piperRe', grave: true, fuente: RANGOS.piper.nombre,
         magnitud: 'Re', rango: RANGOS.piper.Re, valor: v.Re, fraccion: v.fueraPiperRe,
-        sentido: sentido(v.Re, RANGOS.piper.Re), ecuaciones: RANGOS.piper.ecuaciones });
+        sentido: sentido(v.Re, RANGOS.piper.Re), ecuaciones: ecPiper, afecta: afPiper });
     }
     if (v.fueraPiperPr > 0) {
       avisos.push({ clave: 'piperPr', grave: true, fuente: RANGOS.piper.nombre,
         magnitud: 'Pr', rango: RANGOS.piper.Pr, valor: v.Pr, fraccion: v.fueraPiperPr,
-        sentido: sentido(v.Pr, RANGOS.piper.Pr), ecuaciones: RANGOS.piper.ecuaciones });
+        sentido: sentido(v.Pr, RANGOS.piper.Pr), ecuaciones: ecPiper, afecta: afPiper });
     }
     if (v.fueraArsenyevaRe > 0) {
       avisos.push({ clave: 'arsenyevaRe', grave: false, fuente: RANGOS.arsenyeva.nombre,
@@ -634,7 +718,8 @@
     CERO_CELSIUS: CERO_CELSIUS, SIGMA: SIGMA, T_AMB: T_AMB, T_CIELO: T_CIELO,
     LIMITE_AISI321: LIMITE_AISI321, T_PELICULA_MAX: T_PELICULA_MAX, K_ACERO: K_ACERO,
     ZETA_DZ: ZETA_DZ, N_PLACAS: N_PLACAS, THETA_ESTRELLA_MAX: THETA_ESTRELLA_MAX, LAMBDA: 0.7, SAL: SAL,
-    ErrorModelo: ErrorModelo, FAMILIAS: FAMILIAS,
+    ErrorModelo: ErrorModelo, FAMILIAS: FAMILIAS, SAB_TABLA_4: SAB_TABLA_4,
+    parametrosSabourishirazi: parametrosSabourishirazi,
     asignacionDeConstantes: asignacionDeConstantes, propiedades: propiedades,
     entalpia: entalpia, TdesdeH: TdesdeH, mapaDesdeMedioYPico: mapaDesdeMedioYPico,
     resolver: resolver
