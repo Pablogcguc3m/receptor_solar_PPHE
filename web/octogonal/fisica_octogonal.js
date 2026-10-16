@@ -386,6 +386,9 @@
    *   lam              [-]      mezcla entre columnas
    *   s_t, s_2l, b_i, d_sp, delta_pp  [m]   geometria del pillow plate
    *   h_ext, eps, alfa
+   *   limitarRe        bool     Nu y friccion con min(Re, Re_max) en vez de
+   *                             extrapolar al Re del fluido (Re_max: 8000 de
+   *                             Piper; el de la tabla 4 en Sabourishirazi)
    */
   function resolver(cfg) {
     var nPl = N_PLACAS / 2;
@@ -427,6 +430,17 @@
     } else {
       n = asignacionDeConstantes(panel.s_t, panel.s_2l, panel.d_sp, panel.b_i);
     }
+    // Correlaciones del canal interno y su Re maximo. Con limitarRe se
+    // evaluan en min(Re, Re_max): quedan congeladas en el borde del rango
+    var reMaxNu = sab ? sab.Re[1] : RANGOS.piper.Re[1], reMaxF = RANGOS.piper.Re[1];
+    function nusselt(Re, Pr) {
+      return sab ? sab.factor * Math.pow(Re, sab.b) * Math.pow(Pr, 0.4)
+                 : n.n3 * Math.pow(Re, n.n4) * Math.pow(Pr, n.n5);
+    }
+    function friccion(Re) { return n.n1 * Math.pow(Re, n.n2); }
+    var limitar = !!cfg.limitarRe;
+    function reNu(Re) { return limitar ? Math.min(Re, reMaxNu) : Re; }
+    function reF(Re) { return limitar ? Math.min(Re, reMaxF) : Re; }
     var seccion = fChI(panel.b_i, wpp, 0.0);         // Ec. (16), w_e = 0
     var de = deI(panel.b_i);                          // Ec. (14)
     var e = panel.delta_pp;
@@ -446,8 +460,7 @@
       var pr = propiedades(T);
       var u = G / (pr.rho * seccion);
       var Re = pr.rho * u * de / pr.mu;
-      var Nu = sab ? sab.factor * Math.pow(Re, sab.b) * Math.pow(pr.Pr, 0.4)
-                   : n.n3 * Math.pow(Re, n.n4) * Math.pow(pr.Pr, n.n5);
+      var Nu = nusselt(reNu(Re), pr.Pr);
       return { h: Nu * pr.k / de, u: u, Re: Re, Pr: pr.Pr };
     }
 
@@ -551,7 +564,7 @@
           var pr = propiedades(0.5 * (entradas[j][i] + T_fluido[j][i]));
           var u = G / (pr.rho * seccion);
           var Re = pr.rho * u * de / pr.mu;
-          frI += n.n1 * Math.pow(Re, n.n2) * dy / de * pr.rho * u * u / 2;
+          frI += friccion(reF(Re)) * dy / de * pr.rho * u * u / 2;
           hiI += pr.rho * dy;
           if (Re < val.Re[0]) val.Re[0] = Re;
           if (Re > val.Re[1]) val.Re[1] = Re;
@@ -633,7 +646,12 @@
       mapa: mapa, w: w, wpp: wpp, thetaEstrella: theta, L: L, W: nPl * wpp, nPlacas: nPl,
       M: M, N: N, dy: dy, dx: wpp / M,
       A_celda: A, A_f: A_f, fracSoldadura: fracSoldadura, n: n, panel: panel,
-      metodo: metodo, sab: sab,
+      metodo: metodo, sab: sab, limitarRe: limitar,
+      // Para las curvas Nu-Re y zeta-Re: las leyes sin recortar y sus rangos
+      correlaciones: { nusselt: nusselt, friccion: friccion,
+                       rangoNu: sab ? sab.Re : RANGOS.piper.Re, rangoF: RANGOS.piper.Re,
+                       nombreNu: sab ? RANGOS.sabourishirazi.nombre + ', ec. (8)' : RANGOS.piper.nombre + ', ec. (6)',
+                       nombreF: RANGOS.piper.nombre + ', ec. (2)' },
       seccion: seccion, de: de, lam: lam, alfa: alfa, G: G, iteraciones: iteraciones,
       placas: placas, T_ent: cfg.T_ent, T_sal: placas[nPl - 1].T_sal
     };

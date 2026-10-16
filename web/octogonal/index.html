@@ -708,6 +708,54 @@ img{max-width:100%}
         </div>
       </section>
 
+      <section class="tarjeta bloque" aria-label="Correlaciones fuera de rango">
+        <div class="tarjeta-cab"><h3>Correlaciones fuera de rango</h3>
+          <span class="sub">extrapolar al Re de la sal o recortar Re al máximo válido</span></div>
+        <p class="sub" id="rango-nota">&nbsp;</p>
+        <div class="desliza">
+          <table class="placas-tabla">
+            <thead>
+              <tr><th></th><th>Extrapolada<span class="u">Re de la sal</span></th>
+                <th>Recortada<span class="u">Re = Re<sub>máx</sub> válido</span></th><th>Diferencia</th></tr>
+            </thead>
+            <tbody id="t-rango"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="graficas">
+        <div class="tarjeta">
+          <div class="tarjeta-cab">
+            <h3>Nusselt interno frente a Re</h3>
+            <span class="sub">escala logarítmica
+              <button class="descargar" data-descargar="nu" title="Descargar la gráfica como PNG">PNG ↓</button></span>
+          </div>
+          <p class="sub" id="nu-sub">&nbsp;</p>
+          <div class="leyenda">
+            <span><i style="background:var(--fluido)"></i>En rango</span>
+            <span><i style="background:none; border-top:2px dashed var(--pared)"></i>Extrapolada</span>
+            <span><i style="background:none; border-top:2px dotted var(--pelicula)"></i>Recortada</span>
+            <span><i style="background:var(--linea-fuerte); height:9px"></i>Re de la sal</span>
+          </div>
+          <div class="grafica" id="g-nu"></div>
+        </div>
+        <div class="tarjeta">
+          <div class="tarjeta-cab">
+            <h3>Factor de fricción frente a Re</h3>
+            <span class="sub">escala logarítmica
+              <button class="descargar" data-descargar="zeta" title="Descargar la gráfica como PNG">PNG ↓</button></span>
+          </div>
+          <p class="sub" id="zeta-sub">&nbsp;</p>
+          <div class="leyenda">
+            <span><i style="background:var(--fluido)"></i>En rango</span>
+            <span><i style="background:none; border-top:2px dashed var(--pared)"></i>Extrapolada</span>
+            <span><i style="background:none; border-top:2px dotted var(--pelicula)"></i>Recortada</span>
+            <span><i style="background:var(--linea-fuerte); height:9px"></i>Re de la sal</span>
+          </div>
+          <div class="grafica" id="g-zeta"></div>
+        </div>
+      </section>
+
       <section class="tarjeta bloque">
         <div class="tarjeta-cab"><h3>Placa a placa</h3><span class="sub">medio receptor; la sal pasa de una a la siguiente tras mezclarse en el colector</span></div>
         <div class="desliza">
@@ -1334,8 +1382,21 @@ function calcular(){
     ultimo = r;
     if (!sel || sel.I >= r.nPlacas * r.M || sel.j >= r.N) sel = nodoMasCaliente(r);
     pintar(r);
+    // El caso con Re recortado se resuelve aparte y un poco despues, para no
+    // doblar el tiempo de respuesta al arrastrar un deslizador
+    ultimoLim = null;
+    pintarRango(r, null);
+    clearTimeout(pendienteLim);
+    pendienteLim = setTimeout(function(){
+      var rl = null;
+      try { cfg.limitarRe = true; rl = ROC.resolver(cfg); } catch (err) {}
+      if (ultimo !== r) return;
+      ultimoLim = rl;
+      pintarRango(r, rl);
+    }, 180);
   });
 }
+var pendienteLim = null, ultimoLim = null;
 function nodoMasCaliente(r){
   var campo = r.campos.pared, mI = 0, mj = 0, mx = -Infinity;
   for (var j = 0; j < campo.length; j++)
@@ -1613,6 +1674,188 @@ function cfgColumna(r, col){
   };
 }
 
+/* -------------------------------------------- correlaciones fuera de rango -- */
+// Las leyes de potencia del canal interno en ejes logaritmicos (son rectas):
+// tramo valido, extrapolado al Re de la sal y recortado a Re_max. La banda es
+// el Re de todas las porciones del receptor. Lo mismo que
+// receptor_octogonal.dibujar_correlaciones.
+function datosCorrelacion(r, que){
+  var c = r.correlaciones, Re = r.validez.Re;
+  var Pr = ROC.propiedades(0.5 * (r.T_ent + r.T_sal)).Pr;
+  var nu = que === 'nu';
+  var rango = nu ? c.rangoNu : c.rangoF;
+  var ley = nu ? function(x){ return c.nusselt(x, Pr); } : c.friccion;
+  var d = { que: que, ley: ley, Pr: Pr, ReMin: rango[0], ReMax: rango[1], ReSal: Re,
+            ReFin: 1.3 * Math.max(Re[1], rango[1]), nombre: nu ? 'Nu' : 'ζ',
+            fuente: nu ? c.nombreNu : c.nombreF };
+  var ys = [ley(d.ReMin), ley(d.ReMax), ley(d.ReFin)];
+  d.y0 = Math.min.apply(null, ys) / 1.25;
+  d.y1 = Math.max.apply(null, ys) * 1.25;
+  return d;
+}
+var SUP = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+// Marcas de un eje logaritmico: todas las m*10^k para la rejilla y, con
+// etiqueta, las de m en 'con'
+function marcasLog(v0, v1, con){
+  var M = [];
+  for (var k = Math.floor(Math.log10(v0)); k <= Math.ceil(Math.log10(v1)); k++)
+    for (var m = 1; m <= 9; m++){
+      var v = m * Math.pow(10, k);
+      if (v >= v0 * 0.999 && v <= v1 * 1.001) M.push({ v: v, etiqueta: con.indexOf(m) >= 0 });
+    }
+  return M;
+}
+function cifraLog(v){
+  if (v >= 1000) return numeroRango(v);
+  return n(v, Math.max(0, -Math.floor(Math.log10(v) + 1e-9)));
+}
+var GC = { A: 520, H: 300, ml: 58, mr: 18, mt: 14, mb: 42 };
+function escalasCorrelacion(d, A, H){
+  var ax = A - GC.ml - GC.mr, ay = H - GC.mt - GC.mb;
+  var lx0 = Math.log10(d.ReMin), lx1 = Math.log10(d.ReFin), ly0 = Math.log10(d.y0), ly1 = Math.log10(d.y1);
+  return {
+    ax: ax, ay: ay,
+    X: function(v){ return GC.ml + (Math.log10(v) - lx0) / (lx1 - lx0) * ax; },
+    Y: function(v){ return GC.mt + ay - (Math.log10(v) - ly0) / (ly1 - ly0) * ay; },
+    Re: function(px){ return Math.pow(10, lx0 + (px - GC.ml) / ax * (lx1 - lx0)); }
+  };
+}
+// SVG de la grafica con la paleta pal (pantalla o impresion), en A x H
+function svgCorrelacion(d, pal, A, H){
+  var E = escalasCorrelacion(d, A, H), X = E.X, Y = E.Y, f = function(v){ return v.toFixed(2); };
+  var x0 = GC.ml, x1 = GC.ml + E.ax, y0 = GC.mt, y1 = GC.mt + E.ay, s = [];
+  s.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + A + ' ' + H + '" width="' + A + '" height="' + H +
+         '" font-family=\'' + FUENTE + '\' role="img" aria-label="' + d.nombre + ' frente a Re, escala logarítmica">');
+  if (pal.fondo) s.push('<rect width="' + A + '" height="' + H + '" fill="' + pal.fondo + '"/>');
+  // Banda del Re de la sal
+  var b0 = Math.max(X(d.ReSal[0]), x0), b1 = Math.min(X(d.ReSal[1]), x1);
+  s.push('<rect x="' + f(b0) + '" y="' + y0 + '" width="' + f(Math.max(b1 - b0, 1)) + '" height="' + E.ay +
+         '" fill="' + pal.banda + '"/>');
+  // Rejilla y etiquetas
+  var spanY = Math.log10(d.y1 / d.y0);
+  marcasLog(d.y0, d.y1, spanY < 0.7 ? [1, 2, 3, 4, 5, 6, 7, 8, 9] : spanY < 2 ? [1, 2, 5] : [1]).forEach(function(m){
+    s.push('<line x1="' + x0 + '" x2="' + x1 + '" y1="' + f(Y(m.v)) + '" y2="' + f(Y(m.v)) + '" stroke="' +
+           (m.etiqueta ? pal.rejilla : pal.rejillaSuave) + '" stroke-width="1"/>');
+    if (m.etiqueta) s.push('<text x="' + (x0 - 8) + '" y="' + f(Y(m.v) + 3.5) + '" fill="' + pal.tenue +
+                           '" font-size="11" text-anchor="end">' + cifraLog(m.v) + '</text>');
+  });
+  marcasLog(d.ReMin, d.ReFin, [1]).forEach(function(m){
+    s.push('<line x1="' + f(X(m.v)) + '" x2="' + f(X(m.v)) + '" y1="' + y0 + '" y2="' + y1 + '" stroke="' +
+           (m.etiqueta ? pal.rejilla : pal.rejillaSuave) + '" stroke-width="1"/>');
+    if (m.etiqueta) s.push('<text x="' + f(X(m.v)) + '" y="' + (y1 + 17) + '" fill="' + pal.tenue +
+                           '" font-size="11" text-anchor="middle">' + cifraLog(m.v) + '</text>');
+  });
+  s.push('<line x1="' + x0 + '" x2="' + x1 + '" y1="' + y1 + '" y2="' + y1 + '" stroke="' + pal.eje + '"/>');
+  s.push('<line x1="' + x0 + '" x2="' + x0 + '" y1="' + y0 + '" y2="' + y1 + '" stroke="' + pal.eje + '"/>');
+  s.push('<text x="' + (x0 + E.ax / 2) + '" y="' + (H - 6) + '" fill="' + pal.tinta +
+         '" font-size="11" text-anchor="middle">Re</text>');
+  s.push('<text x="12" y="' + (y0 + E.ay / 2) + '" fill="' + pal.tinta + '" font-size="11" text-anchor="middle"' +
+         ' transform="rotate(-90 12 ' + (y0 + E.ay / 2) + ')">' + d.nombre + '</text>');
+  // Limite del rango
+  s.push('<line x1="' + f(X(d.ReMax)) + '" x2="' + f(X(d.ReMax)) + '" y1="' + y0 + '" y2="' + y1 + '" stroke="' +
+         pal.eje + '" stroke-dasharray="4 3"/>');
+  s.push('<text x="' + f(X(d.ReMax) + 5) + '" y="' + (y0 + 12) + '" fill="' + pal.tenue + '" font-size="10.5">Re ' +
+         numeroRango(d.ReMax) + '</text>');
+  // Curvas: en rango, extrapolada y recortada
+  function camino(a, b, fn){
+    var p = [];
+    for (var q = 0; q <= 60; q++){
+      var Re = a * Math.pow(b / a, q / 60);
+      p.push((q ? 'L' : 'M') + f(X(Re)) + ' ' + f(Y(fn(Re))));
+    }
+    return p.join(' ');
+  }
+  var yMax = d.ley(d.ReMax);
+  s.push('<path d="' + camino(d.ReMin, d.ReMax, d.ley) + '" fill="none" stroke="' + pal.rango + '" stroke-width="2" stroke-linecap="round"/>');
+  s.push('<path d="' + camino(d.ReMax, d.ReFin, d.ley) + '" fill="none" stroke="' + pal.extrapolada + '" stroke-width="2" stroke-dasharray="7 5"/>');
+  s.push('<line x1="' + f(X(d.ReMax)) + '" x2="' + f(x1) + '" y1="' + f(Y(yMax)) + '" y2="' + f(Y(yMax)) + '" stroke="' +
+         pal.recortada + '" stroke-width="2" stroke-dasharray="1.5 4" stroke-linecap="round"/>');
+  s.push('<circle cx="' + f(X(d.ReMax)) + '" cy="' + f(Y(yMax)) + '" r="4.5" fill="' + pal.rango + '" stroke="' +
+         (pal.fondo || pal.superficie) + '" stroke-width="2"/>');
+  // Cuanto se separan las dos lecturas a la salida de la sal (el Re mas alto)
+  var Rs = d.ReSal[1];
+  if (Rs > d.ReMax){
+    var ye = Y(d.ley(Rs)), yr = Y(yMax), xs = X(Rs);
+    s.push('<line x1="' + f(xs) + '" x2="' + f(xs) + '" y1="' + f(ye) + '" y2="' + f(yr) + '" stroke="' + pal.tinta + '" stroke-width="1"/>');
+    [ye, yr].forEach(function(yy){
+      s.push('<line x1="' + f(xs - 4) + '" x2="' + f(xs + 4) + '" y1="' + f(yy) + '" y2="' + f(yy) + '" stroke="' + pal.tinta + '" stroke-width="1"/>');
+    });
+    s.push('<text x="' + f(xs - 7) + '" y="' + f((ye + yr) / 2 - 2) + '" fill="' + pal.tinta + '" font-size="11.5" text-anchor="end">×' +
+           n(d.ley(Rs) / yMax, 2) + '</text>');
+    s.push('<text x="' + f(xs - 7) + '" y="' + f((ye + yr) / 2 + 12) + '" fill="' + pal.tenue + '" font-size="10.5" text-anchor="end">a la salida</text>');
+  }
+  s.push('</svg>');
+  return s.join('');
+}
+function pintarCorrelacion(destino, r, que){
+  var d = datosCorrelacion(r, que), css = getComputedStyle(document.body);
+  var v = function(k){ return css.getPropertyValue(k).trim(); };
+  destino.innerHTML = svgCorrelacion(d, { superficie: v('--surface'), banda: 'rgba(255,255,255,.07)',
+    rejilla: v('--linea'), rejillaSuave: 'rgba(255,255,255,.05)', eje: v('--linea-fuerte'), tenue: v('--muted'),
+    tinta: v('--ink-2'), rango: v('--fluido'), extrapolada: v('--pared'), recortada: v('--pelicula') }, GC.A, GC.H);
+  var svg = destino.firstChild;
+  svg.removeAttribute('width'); svg.removeAttribute('height');
+  var E = escalasCorrelacion(d, GC.A, GC.H);
+  var globo = document.createElement('div');
+  globo.className = 'globo';
+  destino.appendChild(globo);
+  var cruz = el('line', { y1: GC.mt, y2: GC.mt + E.ay, stroke: v('--muted'), 'stroke-width': 1,
+                          'stroke-dasharray': '3 3', opacity: 0 });
+  svg.appendChild(cruz);
+  var zona = el('rect', { x: GC.ml, y: GC.mt, width: E.ax, height: E.ay, fill: 'transparent' });
+  svg.appendChild(zona);
+  var dec = que === 'nu' ? 1 : 4;
+  zona.addEventListener('mousemove', function(ev){
+    var caja = svg.getBoundingClientRect();
+    var px = (ev.clientX - caja.left) / caja.width * GC.A;
+    var Re = E.Re(px), y = d.ley(Re);
+    cruz.setAttribute('x1', px); cruz.setAttribute('x2', px); cruz.setAttribute('opacity', 1);
+    globo.innerHTML = '<b>Re ' + numeroRango(Re) + '</b><br>' + (Re <= d.ReMax
+      ? 'En rango: ' + d.nombre + ' ' + n(y, dec)
+      : 'Extrapolada: ' + d.nombre + ' ' + n(y, dec) + '<br>Recortada: ' + d.nombre + ' ' + n(d.ley(d.ReMax), dec));
+    globo.style.left = (px / GC.A * caja.width) + 'px';
+    globo.style.top = (E.Y(y) / GC.H * caja.height - 8) + 'px';
+    globo.style.opacity = '1';
+  });
+  zona.addEventListener('mouseleave', function(){ cruz.setAttribute('opacity', 0); globo.style.opacity = '0'; });
+  $(que + '-sub').textContent = d.fuente + ': válida de Re ' + numeroRango(d.ReMin) + ' a ' + numeroRango(d.ReMax) +
+    (que === 'nu' ? ' · Pr ' + n(d.Pr, 2) + ' (sal a la temperatura media)' : '');
+}
+
+// Tabla extrapolada / recortada. rl es null mientras se resuelve el recortado
+function pintarRango(r, rl){
+  var c = r.correlaciones, Re = r.validez.Re;
+  $('rango-nota').innerHTML = 'Nusselt: ' + c.nombreNu + ', válido hasta Re ' + numeroRango(c.rangoNu[1]) +
+    '. Fricción: ' + c.nombreF + ', hasta Re ' + numeroRango(c.rangoF[1]) + '. La sal circula con Re de ' +
+    numeroRango(Re[0]) + ' a ' + numeroRango(Re[1]) + '. «Extrapolada» lleva las leyes de potencia hasta ese Re ' +
+    '(es el cálculo del resto de la página); «recortada» las evalúa en min(Re, Re<sub>máx</sub>), el último valor válido.';
+  pintarCorrelacion($('g-nu'), r, 'nu');
+  pintarCorrelacion($('g-zeta'), r, 'zeta');
+  var fr = function(x){ return x.dp_friccion; };
+  var bomba = function(x){ return 2 * x.potenciaBombeo / 1e6; };
+  var filas = [
+    ['h interno a la entrada', 'kW/m²K', function(x){ return x.entrada.h / 1e3; }, 1, 'rel'],
+    ['h interno a la salida', 'kW/m²K', function(x){ return x.salida.h / 1e3; }, 1, 'rel'],
+    ['Gasto de sal, receptor', 'kg/s', function(x){ return 2 * x.G; }, 1, 'rel'],
+    ['Rendimiento térmico', '%', function(x){ return x.rendimiento * 100; }, 2, 'puntos'],
+    ['Q a la sal, receptor', 'MW', function(x){ return 2 * x.Q_util / 1e6; }, 1, 'rel'],
+    ['Pared expuesta máx.', '°C', function(x){ return x.T_pared_max - C; }, 0, 'K'],
+    ['Pared mojada máx.', '°C', function(x){ return x.T_pelicula_max - C; }, 0, 'K'],
+    ['Δp de fricción', 'MPa', function(x){ return fr(x) / 1e6; }, 1, 'rel'],
+    ['Δp total, sin hidrostática', 'MPa', function(x){ return x.dp / 1e6; }, 1, 'rel'],
+    ['Potencia de bombeo, receptor', 'MW', bomba, 2, 'rel']
+  ];
+  function signo(v, d){ return (v > 0 ? '+' : v < 0 ? '−' : '') + n(Math.abs(v), d); }
+  $('t-rango').innerHTML = filas.map(function(f){
+    var a = f[2](r), b = rl ? f[2](rl) : null, dif = '…';
+    if (rl) dif = f[4] === 'rel' ? signo((b - a) / a * 100, 1) + ' %'
+                : signo(b - a, f[4] === 'K' ? 0 : 2) + (f[4] === 'K' ? ' K' : ' puntos');
+    var alarma = rl && ((f[0] === 'Pared mojada máx.' && b > LIM_SAL) || (f[0] === 'Pared expuesta máx.' && b > LIM_ACERO));
+    return '<tr><td>' + f[0] + ' <span class="sub">[' + f[1] + ']</span></td><td>' + n(a, f[3]) + '</td><td' +
+      (alarma ? ' style="color:var(--crit)"' : '') + '>' + (rl ? n(b, f[3]) : 'calculando…') + '</td><td>' + dif + '</td></tr>';
+  }).join('');
+}
+
 /* ---------------------------------------------------------- descarga ----- */
 // Como en la pagina del aire: cada figura se redibuja desde los datos sobre
 // fondo blanco, con titulo, punto de trabajo, ejes y escala.
@@ -1838,6 +2081,41 @@ function descargarPlanta(){
     tinta: IMPRESION.tinta, placa: IMPRESION.pared, espejo: '#9A9A9A' }, lado));
 }
 
+// Nu-Re y zeta-Re, igual que la planta: su SVG en colores de impresion y,
+// alrededor, titulo, punto de trabajo y leyenda
+function descargarCorrelacion(que){
+  var r = ultimo; if (!r) return;
+  // El SVG de pantalla (GC.A x GC.H) ampliado, para que texto y trazos crezcan con el
+  var d = datosCorrelacion(r, que), A = 880, H = Math.round(A * GC.H / GC.A), ml = 40, mt = 136;
+  var L = lienzoPng(ml + A + 40, mt + H + 24), o = L.o;
+  texto(o, (que === 'nu' ? 'Nusselt interno' : 'Factor de fricción') + ' frente a Re (escala logarítmica)',
+        ml, 32, 20, IMPRESION.tinta, 'left', 600);
+  puntoDeTrabajo(r).forEach(function(t, q){ texto(o, t, ml, 54 + 16 * q, 11.5, IMPRESION.tenue); });
+  texto(o, d.fuente + ': válida de Re ' + numeroRango(d.ReMin) + ' a ' + numeroRango(d.ReMax) +
+        ' · la sal circula con Re ' + numeroRango(d.ReSal[0]) + '–' + numeroRango(d.ReSal[1]) +
+        (que === 'nu' ? ' · Pr ' + n(d.Pr, 2) + ' (sal a la temperatura media)' : ''), ml, 86, 11.5, IMPRESION.tenue);
+  var lx = ml + GC.ml;
+  [[IMPRESION.fluido, [], 'En rango'], [IMPRESION.pared, [7, 5], 'Extrapolada'],
+   [IMPRESION.pelicula, [1.5, 4], 'Recortada a Re ' + numeroRango(d.ReMax)], ['#E6E6E6', null, 'Re de la sal']]
+    .forEach(function(e){
+      if (e[1]){
+        o.strokeStyle = e[0]; o.lineWidth = 2.5; o.setLineDash(e[1]); o.lineCap = 'round';
+        o.beginPath(); o.moveTo(lx, 114); o.lineTo(lx + 24, 114); o.stroke(); o.setLineDash([]);
+      } else { o.fillStyle = e[0]; o.fillRect(lx, 108, 24, 12); }
+      texto(o, e[2], lx + 32, 118, 13, IMPRESION.tinta);
+      lx += 32 + o.measureText(e[2]).width + 28;
+    });
+  var img = new Image();
+  img.onload = function(){
+    o.drawImage(img, ml, mt, A, H);
+    guardarPng(L.cv, que === 'nu' ? 'octogono_nusselt_re.png' : 'octogono_friccion_re.png');
+  };
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgCorrelacion(d, {
+    fondo: IMPRESION.fondo, banda: '#EFEFEF', rejilla: IMPRESION.rejilla, rejillaSuave: '#F3F3F3',
+    eje: IMPRESION.eje, tenue: IMPRESION.tenue, tinta: IMPRESION.tinta, rango: IMPRESION.fluido,
+    extrapolada: IMPRESION.pared, recortada: IMPRESION.pelicula }, GC.A, GC.H));
+}
+
 // La celda, igual que la planta: su SVG en colores de impresion y, encima,
 // titulo y datos
 function descargarCelda(){
@@ -1864,6 +2142,7 @@ document.addEventListener('click', function(e){
   var que = b.dataset.descargar;
   if (que === 'celda') descargarCelda();
   else if (que === 'planta') descargarPlanta();
+  else if (que === 'nu' || que === 'zeta') descargarCorrelacion(que);
   else if (TITULOS_MAPA[que]) descargarMapa(que); else descargarGrafica(que);
 });
 
@@ -2263,7 +2542,7 @@ calcular();
 var redibujo;
 window.addEventListener('resize', function(){
   clearTimeout(redibujo);
-  redibujo = setTimeout(function(){ if (ultimo) pintar(ultimo); }, 120);
+  redibujo = setTimeout(function(){ if (ultimo){ pintar(ultimo); pintarRango(ultimo, ultimoLim); } }, 120);
 });
 })();
 

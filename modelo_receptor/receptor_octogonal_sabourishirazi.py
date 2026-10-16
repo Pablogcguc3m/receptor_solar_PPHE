@@ -39,7 +39,10 @@ comparación entre los dos métodos sólo vea el cambio de correlación.
 
 VALIDEZ (Tablas 4 y 6). Pr entre 1 y 13; Re de 1200 a 20500 en el longitudinal
 y de 1000 a 10500 en los otros dos; y los cuatro adimensionales dentro de los
-rangos de la Tabla 6. Fuera de ellos se calcula igual, pero se avisa.
+rangos de la Tabla 6. Fuera de ellos se calcula igual, pero se avisa. Con
+re_limitado = True, el Nu se evalúa con Re recortado al máximo de la Tabla 4 de
+su tipo de canal, y la fricción de Piper con Re recortado a 8000 (ver
+receptor_octogonal.comparacion_rango).
 """
 
 from dataclasses import dataclass, field, replace
@@ -50,7 +53,7 @@ import numpy as np
 
 import receptor_octogonal as ro
 from receptor_octogonal import (ALTURA, BARRIDO_LAMBDA, C, LAMBDA, LAMBDAS, N_PLACAS,
-                                Q_MEDIO, Q_PICO, MapaMitad, ancho_placa, form)
+                                Q_MEDIO, Q_PICO, MapaMitad, ancho_placa)
 
 
 # =============================================================================
@@ -141,13 +144,16 @@ class ReceptorSabourishirazi(ro.ReceptorOctogonal):
         object.__setattr__(self, "sab", parametros_sabourishirazi(
             s_t=i.s_t, s_2l=i.s_2l, d_ws=i.d_sp, delta_ic=i.b_i))
 
-    def h_interno(self, T, G):
-        """h, u y Re del canal interno a T, con el gasto G. Sólo cambia el Nu."""
-        pr = self.fluido.propiedades(T)
-        u = G / (pr.rho * self.seccion)                              # Ec. (3)
-        Re = form.Re(rho=pr.rho, u=u, dh=self.de, mu=pr.mu)
-        Nu = NuI_sabourishirazi(self.sab, Re, pr.Pr)
-        return Nu * pr.k / self.de, u, Re
+    nombre_nu = "Sabourishirazi et al. (2025), ec. (8)"
+
+    @property
+    def rango_re_nu(self):
+        """Rango de Re de la Tabla 4 para el tipo de canal de la geometría."""
+        return self.sab.Re
+
+    def nusselt(self, Re, Pr):
+        """Nusselt del canal interno, ec. (8). Lo único que cambia respecto de Piper."""
+        return NuI_sabourishirazi(self.sab, Re, Pr)
 
 
 # =============================================================================
@@ -208,6 +214,9 @@ if __name__ == "__main__":
                       for lam in sorted(set(LAMBDAS) | {LAMBDA}, reverse=True)]
         ro.tabla_lambda(resultados)
 
+    if ro.COMPARAR_RANGO:
+        ro.comparacion_rango(principal)
+
     try:
         import matplotlib.pyplot as plt
     except ImportError:
@@ -216,4 +225,5 @@ if __name__ == "__main__":
         ro.estilo_latex(plt)
         ro.dibujar_mapa(principal, plt)
         ro.dibujar_placas(principal, plt)
+        ro.dibujar_correlaciones(principal, plt)
         plt.show()

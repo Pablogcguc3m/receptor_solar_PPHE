@@ -129,6 +129,15 @@ absorbido y la sal se enfría. En todos, 3 evaluaciones por fila, ningún paso
 de Newton fuera del intervalo, dD/dT_sal <= -3.4e3 W/K y dT_w <= -25 W/K.
 El caso completo pasa de 10.4 s a 1.2 s.
 
+FUERA DE RANGO. La fricción y el Nusselt de Piper solo están ajustados hasta
+Re = 8000, y la sal circula con Re de 4.5e4 a 1.4e5. Por defecto se extrapolan
+las leyes de potencia al Re del fluido (re_limitado = False). Con
+re_limitado = True se evalúan en min(Re, Re_max), el último valor válido: Nu
+y f quedan congelados en el borde del rango (salvo por Pr y las propiedades).
+comparacion_rango() resuelve los dos casos y saca la diferencia en rendimiento,
+temperaturas y pérdida de carga, y dibujar_correlaciones() las curvas Nu-Re y
+f-Re con el tramo válido, el extrapolado y el recortado.
+
 PÉRDIDA DE CARGA. Ec. (19) integrada fila a fila, como en receptor.py, placa a
 placa y en serie: fricción con el f de la ec. (18), zonas de distribución a la
 entrada y salida de cada placa (zeta_DZ/2 cada una) y aceleración. Aparte, el
@@ -144,7 +153,7 @@ calor).
 """
 
 from dataclasses import dataclass, field, replace
-from math import cos, degrees, pi, radians, sin, tan
+from math import cos, degrees, pi, radians, sin, sqrt, tan
 
 import numpy as np
 
@@ -184,6 +193,11 @@ CMAP_PARED = mp.CMAP          # los campos de sal y pared no se confundan ("hot"
 TOL_FILA = 1e-9               # Tolerancia de Newton en la salida de cada porción [K]
 
 BARRIDO_LAMBDA = False        # True: resuelve también LAMBDAS y saca su tabla (x6 de tiempo)
+COMPARAR_RANGO = True         # True: resuelve también con Re recortado al rango de las correlaciones
+
+# Rango de Re de M. Piper (tablas 2-4) para la fricción (ec. 18) y el Nusselt
+# (ec. 20) del canal interno. Con la sal, el canal trabaja muy por encima.
+RANGO_RE_PIPER = (1000.0, 8000.0)
 
 
 def ancho_placa(D=DIAMETRO, n=N_PLACAS, circunscrito=DIAMETRO_CIRCUNSCRITO):
@@ -402,6 +416,7 @@ class ReceptorOctogonal:
     alfa: float = rec.ABSORTIVIDAD
     serpentin: bool = True
     theta_estrella: float = THETA_ESTRELLA  # [rad]; ver la nota del módulo
+    re_limitado: bool = False             # True: Nu y f con min(Re, Re_max); ver la nota
     w_placa: float = field(init=False)    # Ancho desarrollado de la placa doblada [m]
     M: int = field(init=False)
     N: int = field(init=False)
@@ -437,12 +452,41 @@ class ReceptorOctogonal:
 
     # -- Canal interno ------------------------------------------------------
 
+    nombre_nu = "Piper et al. (2017), ec. (20)"
+    nombre_f = "Piper et al. (2017), ec. (18)"
+
+    @property
+    def rango_re_nu(self):
+        """Rango de Re en que está ajustado el Nusselt interno."""
+        return RANGO_RE_PIPER
+
+    @property
+    def rango_re_f(self):
+        """Rango de Re en que está ajustado el factor de fricción interno."""
+        return RANGO_RE_PIPER
+
+    def nusselt(self, Re, Pr):
+        """Nusselt del canal interno, sin recortar Re. Admite arrays."""
+        return form.NuI(n3=self.n.n3, n4=self.n.n4, n5=self.n.n5, Re=Re, Pr=Pr)
+
+    def friccion(self, Re):
+        """Factor de fricción del canal interno, sin recortar Re. Admite arrays."""
+        return form.fI(n1=self.n.n1, Re=Re, n2=self.n.n2)
+
+    def _re_correlacion(self, Re, rango):
+        """El Re con que se evalúa una correlación: el del fluido o, con
+        re_limitado, el máximo del rango si lo supera."""
+        return np.minimum(Re, rango[1]) if self.re_limitado else Re
+
     def h_interno(self, T, G):
-        """h, u y Re del canal interno a T, con el gasto G de la placa. Admite arrays."""
+        """h, u y Re del canal interno a T, con el gasto G de la placa. Admite arrays.
+
+        El Re devuelto es siempre el del fluido, aunque el Nu se evalúe recortado.
+        """
         pr = self.fluido.propiedades(T)
         u = G / (pr.rho * self.seccion)                              # Ec. (3)
         Re = form.Re(rho=pr.rho, u=u, dh=self.de, mu=pr.mu)
-        Nu = form.NuI(n3=self.n.n3, n4=self.n.n4, n5=self.n.n5, Re=Re, Pr=pr.Pr)
+        Nu = self.nusselt(self._re_correlacion(Re, self.rango_re_nu), pr.Pr)
         return Nu * pr.k / self.de, u, Re
 
     # -- Una fila ------------------------------------------------------------
@@ -556,7 +600,7 @@ class ReceptorOctogonal:
         pr = fluido.propiedades(T_m)
         u = G / (pr.rho * self.seccion)
         Re = form.Re(rho=pr.rho, u=u, dh=self.de, mu=pr.mu)
-        f = form.fI(n1=self.n.n1, Re=Re, n2=self.n.n2)
+        f = self.friccion(self._re_correlacion(Re, self.rango_re_f))
         friccion = (f * dy / self.de * pr.rho * u ** 2 / 2).sum(axis=0)
         # Entrada uniforme; salida, la de cada columna antes del colector
         v_ent = 1.0 / fluido.rho(entradas[0 if sube else -1])
@@ -734,6 +778,53 @@ def tabla_lambda(resultados):
     print("  (Tw y Tpel en C; dT sal P1: dispersion del perfil a la salida de la placa 1, en K)")
 
 
+def comparacion_rango(res):
+    """Correlaciones extrapoladas al Re del fluido frente a Re recortado al rango.
+
+    res es el caso extrapolado (re_limitado = False). Se resuelve el mismo
+    receptor con re_limitado = True, arrancando de su gasto, y se comparan
+    rendimiento, temperaturas y pérdida de carga. Devuelve el caso recortado.
+    """
+    r = res.receptor
+    lim = replace(r, re_limitado=True).resolver(G0=res.G)
+    Re_e, Re_s = r.h_interno(r.T_ent, res.G)[2], r.h_interno(r.T_sal, res.G)[2]
+    rho_m = 0.5 * (r.fluido.rho(r.T_ent) + r.fluido.rho(r.T_sal))
+
+    print(f"\n--- Correlaciones fuera de rango: extrapolar o recortar Re " + "-" * 35)
+    print(f"Nusselt: {r.nombre_nu}, valida hasta Re = {r.rango_re_nu[1]:.0f}")
+    print(f"Friccion: {r.nombre_f}, valida hasta Re = {r.rango_re_f[1]:.0f}")
+    print(f"La sal circula con Re = {Re_e:.4g} (entrada) - {Re_s:.4g} (salida)")
+    print(f"{'':30}{'extrapolada':>13}{'Re recortado':>14}{'diferencia':>13}")
+
+    def fila(nombre, a, b, fmt, relativa=True):
+        dif = f"{(b - a) / a * 100:+12.1f}%" if relativa else f"{b - a:+13.2f}"
+        print(f"{nombre:30}{fmt.format(a):>13}{fmt.format(b):>14}{dif}")
+
+    for etiqueta, T in (("entrada", r.T_ent), ("salida", r.T_sal)):
+        fila(f"h interno {etiqueta} [W/m2K]", r.h_interno(T, res.G)[0],
+             lim.receptor.h_interno(T, lim.G)[0], "{:.0f}")
+    fila("Gasto, mitad [kg/s]", res.G, lim.G, "{:.2f}")
+    fila("Rendimiento termico [%]", res.rendimiento * 100, lim.rendimiento * 100, "{:.2f}",
+         relativa=False)
+    fila("Q al fluido, mitad [MW]", res.Q_util / 1e6, lim.Q_util / 1e6, "{:.2f}")
+    fila("Pared expuesta max. [C]", res.T_pared_max - C, lim.T_pared_max - C, "{:.1f}",
+         relativa=False)
+    fila("Pelicula de sal max. [C]", res.T_pelicula_max - C, lim.T_pelicula_max - C, "{:.1f}",
+         relativa=False)
+    fr = lambda x: sum(p.dp_friccion for p in x.placas)
+    fila("dp friccion [MPa]", fr(res) / 1e6, fr(lim) / 1e6, "{:.2f}")
+    fila("dp total, sin hidrost. [MPa]", res.dp / 1e6, lim.dp / 1e6, "{:.2f}")
+    fila("Potencia de bombeo [MW]", 2 * res.G * res.dp / rho_m / 1e6,
+         2 * lim.G * lim.dp / rho_m / 1e6, "{:.2f}")
+    print("  (rendimiento y temperaturas: diferencia absoluta; resto: relativa. Bombeo del "
+          "receptor completo)")
+    Pr_s = r.fluido.propiedades(r.T_sal).Pr
+    print(f"A la salida: Nu extrapolado / Nu en Re_max = "
+          f"{r.nusselt(Re_s, Pr_s) / r.nusselt(r.rango_re_nu[1], Pr_s):.2f}; "
+          f"f extrapolado / f en Re_max = {r.friccion(Re_s) / r.friccion(r.rango_re_f[1]):.2f}")
+    return lim
+
+
 # =============================================================================
 # Figuras
 # =============================================================================
@@ -896,6 +987,59 @@ def dibujar_placas(res, plt):
             _dibujar_campo(res, plt, "T_pared", "Pared expuesta", CMAP_PARED))
 
 
+COLOR_RANGO, COLOR_EXTRAPOLADA, COLOR_RECORTADA = "#1F63C6", "#D9531E", "#7B3FB5"
+
+
+def dibujar_correlaciones(res, plt):
+    """Nu-Re y f-Re del canal interno: tramo válido, extrapolado y recortado.
+
+    Ejes logarítmicos, en los que las leyes de potencia son rectas. La banda
+    gris es el Re con que circula la sal, de la entrada a la salida. El Nu se
+    da al Pr de la sal a la temperatura media entre entrada y salida.
+    """
+    r, G = res.receptor, res.G
+    Re_e, Re_s = r.h_interno(r.T_ent, G)[2], r.h_interno(r.T_sal, G)[2]
+    Pr = r.fluido.propiedades(0.5 * (r.T_ent + r.T_sal)).Pr
+    fig, ejes = plt.subplots(1, 2, figsize=(12, 4.8), layout="constrained")
+    paneles = ((ejes[0], r.rango_re_nu, lambda Re: r.nusselt(Re, Pr), "$Nu$",
+                f"Nusselt interno: {r.nombre_nu}"),
+               (ejes[1], r.rango_re_f, r.friccion, r"Factor de fricción $\zeta$",
+                f"Factor de fricción: {r.nombre_f}"))
+    for ax, (Re_min, Re_max), ley, nombre, titulo in paneles:
+        Re_fin = 1.3 * max(Re_s, Re_max)
+        valido = np.geomspace(Re_min, Re_max, 100)
+        fuera = np.geomspace(Re_max, Re_fin, 200)
+        ax.axvspan(min(Re_e, Re_s), max(Re_e, Re_s), color="0.88", lw=0,
+                   label="Re de la sal (entrada a salida)")
+        ax.plot(valido, ley(valido), color=COLOR_RANGO, lw=2, label="En rango")
+        ax.plot(fuera, ley(fuera), color=COLOR_EXTRAPOLADA, lw=2, ls="--",
+                label="Extrapolada")
+        ax.plot(fuera, np.full_like(fuera, ley(Re_max)), color=COLOR_RECORTADA, lw=2, ls=":",
+                label=f"Recortada a Re = {Re_max:.0f}")
+        ax.plot([Re_max], [ley(Re_max)], "o", ms=7, color=COLOR_RANGO, mec="white", mew=1.5,
+                zorder=5)
+        ax.axvline(Re_max, color="0.45", lw=0.8, ls="--")
+        # Cuánto se separan las dos lecturas a la salida de la sal
+        ext, rec_ = ley(Re_s), ley(Re_max)
+        ax.annotate("", xy=(Re_s, ext), xytext=(Re_s, rec_),
+                    arrowprops=dict(arrowstyle="<->", color="0.3", lw=1))
+        ax.annotate(f"×{ext / rec_:.2f}\na la salida", xy=(Re_s, sqrt(ext * rec_)),
+                    xytext=(-6, 0), textcoords="offset points", ha="right", va="center",
+                    fontsize=9.5)
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlim(Re_min, Re_fin)
+        ax.set_xlabel("$Re$")
+        ax.set_ylabel(nombre)
+        ax.set_title(titulo)
+        ax.grid(True, which="both", color="0.9", lw=0.6)
+        ax.legend(loc="best", fontsize=9, frameon=False)
+    ejes[0].text(0.02, 0.02, f"$Pr$ = {Pr:.2f} (sal a la temperatura media)",
+                 transform=ejes[0].transAxes, fontsize=9, color="0.35")
+    fig.suptitle("Correlaciones del canal interno fuera de su rango de Re")
+    return fig
+
+
 # =============================================================================
 # Caso de estudio
 # =============================================================================
@@ -913,6 +1057,9 @@ if __name__ == "__main__":
                       for lam in sorted(set(LAMBDAS) | {LAMBDA}, reverse=True)]
         tabla_lambda(resultados)
 
+    if COMPARAR_RANGO:
+        comparacion_rango(principal)
+
     try:
         import matplotlib.pyplot as plt
     except ImportError:
@@ -921,4 +1068,5 @@ if __name__ == "__main__":
         estilo_latex(plt)
         dibujar_mapa(principal, plt)
         dibujar_placas(principal, plt)
+        dibujar_correlaciones(principal, plt)
         plt.show()
