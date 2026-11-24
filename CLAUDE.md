@@ -77,9 +77,10 @@ modelo_receptor/                 receptor solar, propiedades función de T
 ```
 
 - `receptor.py` carga `formulas`, `asignacion` y `geometria` del otro paquete
-  **por ruta** con `_importar()`, porque `modelo_receptor/formulas.py` existe
-  (vacío) y un `import formulas` cogería el de la carpeta equivocada. No
-  sustituirlo por un `sys.path.append`.
+  **por ruta** con `_importar()`, con nombres propios (`th_formulas`...), para
+  que sus nombres genéricos no choquen con otros módulos. No sustituirlo por un
+  `sys.path.append`, ni crear en `modelo_receptor/` un fichero que se llame
+  igual que uno de `modelo_termohidraulico/`.
 - `receptor_octogonal.py` reutiliza de `receptor.py` las constantes, las
   pérdidas y la cadena del canal interno; `receptor_octogonal_sabourishirazi.py`
   hereda de `ReceptorOctogonal`. Un cambio en `receptor.py` se propaga a los
@@ -132,10 +133,3 @@ compilable con pdflatex): qué se cambió, por qué, cómo y con qué resultados
 con las tablas numéricas. `informes/` y `.claude/` están en `.gitignore` y no
 se suben. `modelo_receptor/documentacion_receptor.tex` sí se versiona, pero no
 su PDF.
-
-## Cabos sueltos conocidos
-
-- El docstring de `modelo_f3.py` habla de `modelo_iterativo.py`, que no existe:
-  la vía iterativa es `iteracion_vel.py`.
-- `modelo_receptor/formulas.py` está vacío. Mientras exista, `_importar()` es
-  imprescindible.

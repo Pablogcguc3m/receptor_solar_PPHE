@@ -109,9 +109,12 @@ import props_fluido as pf
 def _importar(nombre, ruta):
     """Carga un módulo por su ruta, sin tocar sys.path.
 
-    Hace falta porque el otro paquete tiene un formulas.py y este también: un
-    'import formulas' normal cogería el de la carpeta desde la que se ejecute,
-    que es justo el error que este rodeo evita.
+    Los tres módulos viven en la otra carpeta, que no está en sys.path, y tienen
+    nombres genéricos (formulas, geometria): añadir la carpeta a sys.path dejaría
+    'formulas' a la vista de quien importe este módulo y podría tapar, o quedar
+    tapado por, otro fichero con el mismo nombre. Cargándolos por ruta absoluta y
+    con nombre propio (th_formulas...) se elige sin ambigüedad y sin efectos
+    secundarios.
     """
     spec = spec_from_file_location(nombre, ruta)
     modulo = module_from_spec(spec)

@@ -68,13 +68,15 @@ especificación con \texttt{spec\_from\_file\_location} y la ejecuta a mano:
     spec.loader.exec_module(modulo)
 \end{verbatim}
 
-El motivo es un choque de nombres real: las dos carpetas tienen un
-\texttt{formulas.py}. Con un \texttt{import formulas} normal, Python cogería el
-de la carpeta desde la que se ejecute el script, que unas veces sería el bueno y
-otras no, y el fallo sería silencioso --- funciones con el mismo nombre y
-distinto contenido ---. Cargando por ruta absoluta se elige sin ambigüedad, y
-además no se toca \texttt{sys.path}, de modo que el módulo no deja efectos
-secundarios en quien lo importe. Los nombres internos que se les da
+El motivo es evitar choques de nombres: los módulos del otro paquete viven en
+una carpeta que no está en \texttt{sys.path} y tienen nombres genéricos
+(\texttt{formulas}, \texttt{geometria}). Añadir esa carpeta a \texttt{sys.path}
+los dejaría a la vista de quien importe \texttt{receptor.py}, y un
+\texttt{import formulas} podría acabar cogiendo otro fichero del mismo nombre
+sin que nada avisara --- funciones con el mismo nombre y distinto contenido ---.
+Cargando por ruta absoluta se elige sin ambigüedad, y además no se toca
+\texttt{sys.path}, de modo que el módulo no deja efectos secundarios en quien lo
+importe. Los nombres internos que se les da
 (\texttt{th\_formulas}, \texttt{th\_asignacion}, \texttt{th\_geometria}) llevan
 prefijo por la misma razón.
 

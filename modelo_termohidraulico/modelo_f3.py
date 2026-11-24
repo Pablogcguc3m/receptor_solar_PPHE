@@ -8,7 +8,7 @@ panel, y la velocidad sale de la ecuación (3) de O. Arsenyeva et al.,
 de donde salen Re, Pr, Nu, el factor de fricción y el coeficiente de película.
 La pérdida de carga es un RESULTADO, obtenido de la ec. (19); no se impone.
 
-Es la alternativa a modelo_iterativo.py, que hace lo contrario: impone la pérdida
+Es la alternativa a iteracion_vel.py, que hace lo contrario: impone la pérdida
 de carga admisible y despeja la velocidad de la ecuación implícita (28). Las dos
 vías son equivalentes y dan el mismo punto de diseño cuando se cierran con las
 mismas condiciones; ésta tiene la ventaja de partir del caudal, que es el dato
